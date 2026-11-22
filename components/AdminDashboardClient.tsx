@@ -29,9 +29,20 @@ import {
   PanelBottom,
   Monitor,
   Smartphone,
+  ClipboardList,
+  FolderOpen,
+  Boxes,
+  Copy,
 } from "lucide-react";
 
-type AdminTab = "sections" | "brands" | "categories" | "products";
+type AdminTab =
+  | "sections"
+  | "orders"
+  | "brands"
+  | "categories"
+  | "collections"
+  | "products"
+  | "files";
 type EditorFocus = "homepage" | "header" | "footer";
 type PreviewViewport = "desktop" | "mobile";
 
@@ -63,6 +74,23 @@ interface CategoryRecord {
   _count?: { products: number };
 }
 
+interface CollectionItem {
+  id: number;
+  title: string;
+  productsCount: number;
+  conditions: string;
+  salesChannels: number;
+}
+
+interface OrderItem {
+  id: string;
+  orderNumber: string;
+  customer: string;
+  total: number;
+  status: string;
+  date: string;
+}
+
 interface ProductRecord {
   id: number;
   sku: string;
@@ -73,6 +101,8 @@ interface ProductRecord {
   origin: string | null;
   shape: string | null;
   boxInfo: string | null;
+  productType?: string | null;
+  vendor?: string | null;
   quickBooksPrice: number;
   wholesalePrice: number | null;
   qboQtyOnHand: number;
@@ -97,6 +127,8 @@ const EMPTY_PRODUCT_FORM = {
   name: "",
   categoryId: "",
   brand: "",
+  vendor: "",
+  productType: "",
   boxInfo: "",
   origin: "",
   shape: "",
@@ -104,9 +136,38 @@ const EMPTY_PRODUCT_FORM = {
   description: "",
   quickBooksPrice: "0",
   wholesalePrice: "",
+  qboQtyOnHand: "0",
   isActive: true,
   publicVisibilityOverride: true,
 };
+
+const INITIAL_COLLECTIONS: CollectionItem[] = [
+  {
+    id: 1,
+    title: "Best Sellers",
+    productsCount: 4,
+    conditions: "Tag includes best-seller",
+    salesChannels: 3,
+  },
+  {
+    id: 2,
+    title: "Premium Cigars",
+    productsCount: 1,
+    conditions: "Type is equal to Cigars",
+    salesChannels: 3,
+  },
+];
+
+const INITIAL_ORDERS: OrderItem[] = [
+  {
+    id: "ord-1001",
+    orderNumber: "#LAC-1001",
+    customer: "Wholesale Retail Account",
+    total: 0,
+    status: "Pending",
+    date: "Today",
+  },
+];
 
 export default function AdminDashboardClient({
   adminEmail,
@@ -142,6 +203,8 @@ export default function AdminDashboardClient({
   const [editTitle, setEditTitle] = useState("");
   const [editContentJson, setEditContentJson] = useState("{}");
 
+  const [orders] = useState<OrderItem[]>(INITIAL_ORDERS);
+
   const [brands, setBrands] = useState<BrandRecord[]>([]);
   const [newBrandName, setNewBrandName] = useState("");
   const [newBrandLogo, setNewBrandLogo] = useState("");
@@ -149,6 +212,12 @@ export default function AdminDashboardClient({
   const [categories, setCategories] = useState<CategoryRecord[]>([]);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [newCategoryPublic, setNewCategoryPublic] = useState(true);
+
+  const [collections, setCollections] =
+    useState<CollectionItem[]>(INITIAL_COLLECTIONS);
+  const [newCollectionTitle, setNewCollectionTitle] = useState("");
+  const [newCollectionConditions, setNewCollectionConditions] = useState("");
+  const [collectionSearch, setCollectionSearch] = useState("");
 
   const [products, setProducts] = useState<ProductRecord[]>([]);
   const [mediaList, setMediaList] = useState<CmsMediaRecord[]>([]);
@@ -637,6 +706,27 @@ export default function AdminDashboardClient({
     }
   };
 
+  const handleAddCollection = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCollectionTitle.trim()) return;
+    const item: CollectionItem = {
+      id: Date.now(),
+      title: newCollectionTitle.trim(),
+      productsCount: products.length,
+      conditions: newCollectionConditions.trim() || "Manual / All active",
+      salesChannels: 3,
+    };
+    setCollections((prev) => [item, ...prev]);
+    setNewCollectionTitle("");
+    setNewCollectionConditions("");
+    showToast("success", `Collection "${item.title}" added.`);
+  };
+
+  const handleDeleteCollection = (id: number) => {
+    setCollections((prev) => prev.filter((c) => c.id !== id));
+    showToast("success", "Collection removed.");
+  };
+
   const openNewProductModal = () => {
     setProductForm({
       ...EMPTY_PRODUCT_FORM,
@@ -652,6 +742,8 @@ export default function AdminDashboardClient({
       name: product.name,
       categoryId: String(product.categoryId),
       brand: product.brand ?? "",
+      vendor: product.vendor ?? product.brand ?? "",
+      productType: product.productType ?? product.category?.name ?? "",
       boxInfo: product.boxInfo ?? "",
       origin: product.origin ?? "",
       shape: product.shape ?? "",
@@ -660,6 +752,7 @@ export default function AdminDashboardClient({
       quickBooksPrice: String(product.quickBooksPrice ?? 0),
       wholesalePrice:
         product.wholesalePrice !== null ? String(product.wholesalePrice) : "",
+      qboQtyOnHand: String(product.qboQtyOnHand ?? 0),
       isActive: product.isActive,
       publicVisibilityOverride: product.publicVisibilityOverride ?? true,
     });
@@ -743,6 +836,11 @@ export default function AdminDashboardClient({
     }
   };
 
+  const handleCopyUrl = (url: string) => {
+    navigator.clipboard?.writeText(url);
+    showToast("success", "File URL copied to clipboard.");
+  };
+
   const filteredProducts = products.filter((p) => {
     const q = productSearch.trim().toLowerCase();
     if (!q) return true;
@@ -750,7 +848,18 @@ export default function AdminDashboardClient({
       p.name.toLowerCase().includes(q) ||
       p.sku.toLowerCase().includes(q) ||
       (p.brand ?? "").toLowerCase().includes(q) ||
+      (p.vendor ?? "").toLowerCase().includes(q) ||
+      (p.productType ?? "").toLowerCase().includes(q) ||
       (p.category?.name ?? "").toLowerCase().includes(q)
+    );
+  });
+
+  const filteredCollections = collections.filter((c) => {
+    const q = collectionSearch.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      c.title.toLowerCase().includes(q) ||
+      c.conditions.toLowerCase().includes(q)
     );
   });
 
@@ -941,6 +1050,28 @@ export default function AdminDashboardClient({
             )}
           </div>
 
+          {/* Orders Menu */}
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={() => setActiveTab("orders")}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition-colors ${
+                activeTab === "orders"
+                  ? "bg-white text-[#1a1714] shadow-xs"
+                  : "text-[#4a4238] hover:bg-white/60"
+              }`}
+            >
+              <span className="flex items-center gap-2">
+                <ClipboardList className="w-4 h-4 text-[#8c6d48]" />
+                Orders
+              </span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#f4f3f0] text-[#6b6256]">
+                {orders.length}
+              </span>
+            </button>
+          </div>
+
+          {/* Clear Divider + Wholesale Catalog */}
           <div className="pt-3 mt-3 border-t border-[#d4cec1]">
             <p className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-[#6b6256]">
               Wholesale Catalog
@@ -985,6 +1116,24 @@ export default function AdminDashboardClient({
 
               <button
                 type="button"
+                onClick={() => setActiveTab("collections")}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition-colors ${
+                  activeTab === "collections"
+                    ? "bg-white text-[#1a1714] shadow-xs"
+                    : "text-[#4a4238] hover:bg-white/60"
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  <Boxes className="w-4 h-4 text-[#8c6d48]" />
+                  Collections
+                </span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#f4f3f0] text-[#6b6256]">
+                  {collections.length}
+                </span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => setActiveTab("products")}
                 className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition-colors ${
                   activeTab === "products"
@@ -1001,6 +1150,27 @@ export default function AdminDashboardClient({
                 </span>
               </button>
             </div>
+          </div>
+
+          {/* Files Menu */}
+          <div className="pt-3 mt-3 border-t border-[#d4cec1]">
+            <button
+              type="button"
+              onClick={() => setActiveTab("files")}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition-colors ${
+                activeTab === "files"
+                  ? "bg-white text-[#1a1714] shadow-xs"
+                  : "text-[#4a4238] hover:bg-white/60"
+              }`}
+            >
+              <span className="flex items-center gap-2">
+                <FolderOpen className="w-4 h-4 text-[#8c6d48]" />
+                Files
+              </span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#f4f3f0] text-[#6b6256]">
+                {mediaList.length}
+              </span>
+            </button>
           </div>
         </aside>
 
@@ -1365,6 +1535,53 @@ export default function AdminDashboardClient({
                 )}
               </div>
             </div>
+          ) : activeTab === "orders" ? (
+            /* ORDERS TAB */
+            <div className="max-w-6xl mx-auto space-y-6">
+              <div className="bg-white border border-[#e0dbd0] rounded-xl overflow-hidden shadow-xs">
+                <div className="px-5 py-4 border-b border-[#ece8df] flex items-center justify-between">
+                  <h2 className="text-sm font-bold text-[#1a1714]">
+                    Orders ({orders.length})
+                  </h2>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-[#ece8df] bg-[#faf8f4] text-[10px] uppercase tracking-wider text-[#6b6256]">
+                        <th className="py-3 px-4">Order</th>
+                        <th className="py-3 px-4">Customer</th>
+                        <th className="py-3 px-4">Date</th>
+                        <th className="py-3 px-4">Total</th>
+                        <th className="py-3 px-4">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#f0ece3] text-xs">
+                      {orders.map((ord) => (
+                        <tr key={ord.id} className="hover:bg-[#faf8f4]">
+                          <td className="py-3 px-4 font-bold text-[#1a1714]">
+                            {ord.orderNumber}
+                          </td>
+                          <td className="py-3 px-4 text-[#4a4238]">
+                            {ord.customer}
+                          </td>
+                          <td className="py-3 px-4 text-[#6b6256]">
+                            {ord.date}
+                          </td>
+                          <td className="py-3 px-4 font-bold text-[#1a1714]">
+                            ${ord.total.toFixed(2)}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900">
+                              {ord.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
           ) : activeTab === "brands" ? (
             <div className="max-w-5xl mx-auto space-y-6">
               <form
@@ -1572,7 +1789,187 @@ export default function AdminDashboardClient({
                 )}
               </div>
             </div>
+          ) : activeTab === "collections" ? (
+            /* COLLECTIONS TAB */
+            <div className="max-w-6xl mx-auto space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="relative w-full sm:w-80">
+                  <Search className="w-4 h-4 text-[#8c6d48] absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={collectionSearch}
+                    onChange={(e) => setCollectionSearch(e.target.value)}
+                    placeholder="Search collections..."
+                    className="w-full pl-10 pr-4 py-2 text-xs bg-white border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
+                  />
+                </div>
+
+                <form
+                  onSubmit={handleAddCollection}
+                  className="flex flex-wrap items-center gap-2"
+                >
+                  <input
+                    type="text"
+                    required
+                    value={newCollectionTitle}
+                    onChange={(e) => setNewCollectionTitle(e.target.value)}
+                    placeholder="Collection title..."
+                    className="px-3 py-2 text-xs bg-white border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
+                  />
+                  <input
+                    type="text"
+                    value={newCollectionConditions}
+                    onChange={(e) => setNewCollectionConditions(e.target.value)}
+                    placeholder="Conditions (optional)"
+                    className="px-3 py-2 text-xs bg-white border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
+                  />
+                  <button
+                    type="submit"
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#1a1714] hover:bg-[#8c6d48] text-white text-xs font-bold transition-colors"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Add collection
+                  </button>
+                </form>
+              </div>
+
+              <div className="bg-white border border-[#e0dbd0] rounded-xl overflow-hidden shadow-xs">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-[#ece8df] bg-[#faf8f4] text-[11px] font-semibold text-[#574d42]">
+                        <th className="py-3 px-4">Title</th>
+                        <th className="py-3 px-4 text-right">Products</th>
+                        <th className="py-3 px-4">Conditions</th>
+                        <th className="py-3 px-4 text-right">Sales channels</th>
+                        <th className="py-3 px-4 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#f0ece3] text-xs">
+                      {filteredCollections.map((col) => (
+                        <tr key={col.id} className="hover:bg-[#faf8f4]">
+                          <td className="py-3 px-4 font-bold text-[#1a1714]">
+                            {col.title}
+                          </td>
+                          <td className="py-3 px-4 text-right text-[#4a4238]">
+                            {col.productsCount}
+                          </td>
+                          <td className="py-3 px-4 text-[#574d42]">
+                            {col.conditions}
+                          </td>
+                          <td className="py-3 px-4 text-right text-[#4a4238]">
+                            {col.salesChannels}
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteCollection(col.id)}
+                              className="p-1 text-[#6b6256] hover:text-red-600"
+                              title="Delete Collection"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          ) : activeTab === "files" ? (
+            /* FILES LIBRARY TAB */
+            <div className="max-w-6xl mx-auto space-y-6">
+              <div className="bg-white border border-[#e0dbd0] rounded-xl p-5 shadow-xs flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-sm font-bold text-[#1a1714]">
+                    Files ({mediaList.length})
+                  </h2>
+                  <p className="text-xs text-[#6b6256] mt-0.5">
+                    Upload atau pilih file untuk dipakai pada Product atau
+                    bagian web lainnya.
+                  </p>
+                </div>
+
+                <label className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[#1a1714] hover:bg-[#8c6d48] text-white text-xs font-bold cursor-pointer transition-colors">
+                  <Upload className="w-4 h-4" />
+                  {uploadingImage ? "Uploading..." : "Upload File"}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    disabled={uploadingImage}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleImageFileUpload(file);
+                      e.target.value = "";
+                    }}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+
+              <div className="bg-white border border-[#e0dbd0] rounded-xl overflow-hidden shadow-xs">
+                {mediaList.length === 0 ? (
+                  <div className="p-12 text-center text-xs text-[#6b6256]">
+                    Belum ada file tersimpan. Klik &ldquo;Upload File&rdquo;
+                    untuk menambahkan gambar.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 p-5">
+                    {mediaList.map((file) => (
+                      <div
+                        key={file.id}
+                        className="border border-[#e5dfd3] rounded-xl p-3 bg-[#fdfbf7] flex flex-col justify-between gap-3"
+                      >
+                        <div className="aspect-square rounded-lg bg-white border border-[#ece8df] overflow-hidden flex items-center justify-center">
+                          <img
+                            src={file.url}
+                            alt={file.fileName}
+                            className="w-full h-full object-contain"
+                          />
+                        </div>
+                        <div className="space-y-1 min-w-0">
+                          <p className="text-xs font-bold text-[#1a1714] truncate">
+                            {file.fileName}
+                          </p>
+                          <p className="text-[10px] text-[#6b6256]">
+                            {Math.max(1, Math.round(file.sizeByte / 1024))} KB
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleCopyUrl(file.url)}
+                            className="flex-1 inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#ebe8e1] hover:bg-[#dcd7cc] text-[#1a1714] text-[11px] font-bold transition-colors"
+                          >
+                            <Copy className="w-3 h-3" />
+                            Copy URL
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setProductForm({
+                                ...EMPTY_PRODUCT_FORM,
+                                categoryId: categories[0]
+                                  ? String(categories[0].id)
+                                  : "",
+                                image: file.url,
+                              });
+                              setShowProductModal(true);
+                            }}
+                            className="px-2.5 py-1.5 rounded-lg bg-[#1a1714] hover:bg-[#8c6d48] text-white text-[11px] font-bold transition-colors"
+                          >
+                            Use in Product
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
           ) : (
+            /* PRODUCTS TAB */
             <div className="max-w-6xl mx-auto space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="relative w-full sm:w-80">
@@ -1618,6 +2015,9 @@ export default function AdminDashboardClient({
                           <th className="py-3 px-4">Wholesale</th>
                           <th className="py-3 px-4">QBO Price</th>
                           <th className="py-3 px-4">Status</th>
+                          <th className="py-3 px-4">Inventory</th>
+                          <th className="py-3 px-4">Product Type</th>
+                          <th className="py-3 px-4">Vendor</th>
                           <th className="py-3 px-4 text-right">Actions</th>
                         </tr>
                       </thead>
@@ -1672,6 +2072,17 @@ export default function AdminDashboardClient({
                               >
                                 {product.isActive ? "Active" : "Draft"}
                               </button>
+                            </td>
+                            <td className="py-3 px-4 text-[#4a4238] whitespace-nowrap">
+                              {product.qboQtyOnHand ?? 0} in stock
+                            </td>
+                            <td className="py-3 px-4 text-[#4a4238]">
+                              {product.productType ||
+                                product.category?.name ||
+                                "—"}
+                            </td>
+                            <td className="py-3 px-4 text-[#4a4238]">
+                              {product.vendor || product.brand || "—"}
                             </td>
                             <td className="py-3 px-4 text-right">
                               <div className="inline-flex items-center gap-1">
@@ -1784,6 +2195,57 @@ export default function AdminDashboardClient({
                   placeholder="e.g. El Bacán Robusto Maduro (Box of 20)"
                   className="w-full px-3 py-2 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
                 />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256] mb-1">
+                    Inventory (Qty)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={productForm.qboQtyOnHand}
+                    onChange={(e) =>
+                      setProductForm({
+                        ...productForm,
+                        qboQtyOnHand: e.target.value,
+                      })
+                    }
+                    className="w-full px-3 py-2 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256] mb-1">
+                    Product Type
+                  </label>
+                  <input
+                    type="text"
+                    value={productForm.productType}
+                    onChange={(e) =>
+                      setProductForm({
+                        ...productForm,
+                        productType: e.target.value,
+                      })
+                    }
+                    placeholder="e.g. Cigars"
+                    className="w-full px-3 py-2 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256] mb-1">
+                    Vendor
+                  </label>
+                  <input
+                    type="text"
+                    value={productForm.vendor}
+                    onChange={(e) =>
+                      setProductForm({ ...productForm, vendor: e.target.value })
+                    }
+                    placeholder="e.g. El Bacán"
+                    className="w-full px-3 py-2 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
