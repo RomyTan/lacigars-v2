@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Truck,
@@ -35,6 +36,11 @@ const TRUST_ITEMS = [
 
 export function FooterSection() {
   const { openDrawer } = useStorefront();
+  const [year, setYear] = useState(2026);
+
+  useEffect(() => {
+    setYear(new Date().getFullYear());
+  }, []);
 
   return (
     <div className="relative z-10">
@@ -185,8 +191,7 @@ export function FooterSection() {
 
           <div className="pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-[11px] text-[#8c8276]">
             <p>
-              © {new Date().getFullYear()} Latin American Cigars Corp. All
-              Rights Reserved.
+              © {year} Latin American Cigars Corp. All Rights Reserved.
             </p>
             <p className="uppercase tracking-[0.18em]">
               Florida Licensed B2B Wholesale Distributor
