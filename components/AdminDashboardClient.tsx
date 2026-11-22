@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -8,8 +8,6 @@ import {
   Tag,
   FolderTree,
   Package,
-  Eye,
-  EyeOff,
   ArrowUp,
   ArrowDown,
   Save,
@@ -25,9 +23,17 @@ import {
   Upload,
   Image as ImageIcon,
   LogOut,
+  ChevronDown,
+  ChevronRight,
+  PanelTop,
+  PanelBottom,
+  Monitor,
+  Smartphone,
 } from "lucide-react";
 
 type AdminTab = "sections" | "brands" | "categories" | "products";
+type EditorFocus = "homepage" | "header" | "footer";
+type PreviewViewport = "desktop" | "mobile";
 
 interface CmsSectionRecord {
   id: number;
@@ -108,9 +114,27 @@ export default function AdminDashboardClient({
   adminEmail?: string;
 }) {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<AdminTab>("sections");
+  const previewIframeRef = useRef<HTMLIFrameElement | null>(null);
 
-  // Sections state
+  const [activeTab, setActiveTab] = useState<AdminTab>("sections");
+  const [editorFocus, setEditorFocus] = useState<EditorFocus>("homepage");
+  const [themeSectionsOpen, setThemeSectionsOpen] = useState(true);
+  const [previewViewport, setPreviewViewport] =
+    useState<PreviewViewport>("desktop");
+
+  const [headerDraft, setHeaderDraft] = useState({
+    brandLabel: "",
+    announcement: "",
+    ctaLabel: "",
+    ctaHref: "",
+  });
+
+  const [footerDraft, setFooterDraft] = useState({
+    tagline: "",
+    copyright: "",
+    contactEmail: "",
+  });
+
   const [sections, setSections] = useState<CmsSectionRecord[]>([]);
   const [selectedSectionId, setSelectedSectionId] = useState<number | null>(
     null
@@ -118,17 +142,14 @@ export default function AdminDashboardClient({
   const [editTitle, setEditTitle] = useState("");
   const [editContentJson, setEditContentJson] = useState("{}");
 
-  // Brands state
   const [brands, setBrands] = useState<BrandRecord[]>([]);
   const [newBrandName, setNewBrandName] = useState("");
   const [newBrandLogo, setNewBrandLogo] = useState("");
 
-  // Categories state
   const [categories, setCategories] = useState<CategoryRecord[]>([]);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [newCategoryPublic, setNewCategoryPublic] = useState(true);
 
-  // Products & Media state
   const [products, setProducts] = useState<ProductRecord[]>([]);
   const [mediaList, setMediaList] = useState<CmsMediaRecord[]>([]);
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -136,7 +157,6 @@ export default function AdminDashboardClient({
   const [showProductModal, setShowProductModal] = useState(false);
   const [productForm, setProductForm] = useState(EMPTY_PRODUCT_FORM);
 
-  // UI feedback
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{
@@ -153,6 +173,77 @@ export default function AdminDashboardClient({
     await fetch("/api/cms/auth/logout", { method: "POST" });
     router.push("/admin/login");
     router.refresh();
+  };
+
+  const selectedSection =
+    sections.find((s) => s.id === selectedSectionId) ?? null;
+
+  const selectedSectionIndex = selectedSection
+    ? sections.findIndex((s) => s.id === selectedSection.id)
+    : -1;
+
+  const parsedEditorObj: Record<string, unknown> | null = (() => {
+    try {
+      const obj = JSON.parse(editContentJson);
+      return obj && typeof obj === "object" && !Array.isArray(obj) ? obj : null;
+    } catch {
+      return null;
+    }
+  })();
+
+  const buildPreviewSections = () => {
+    return sections.map((sec) => {
+      if (sec.id !== selectedSectionId) return sec;
+      return {
+        ...sec,
+        title: editTitle,
+        content: parsedEditorObj ?? sec.content,
+      };
+    });
+  };
+
+  const postPreviewPayload = (
+    overrideFocus?: EditorFocus,
+    overrideSectionId?: number | null,
+    overrideSectionIndex?: number
+  ) => {
+    const win = previewIframeRef.current?.contentWindow;
+    if (!win) return;
+    const targetFocus = overrideFocus ?? editorFocus;
+    const targetId =
+      overrideSectionId !== undefined ? overrideSectionId : selectedSectionId;
+    const targetIndex =
+      overrideSectionIndex !== undefined
+        ? overrideSectionIndex
+        : selectedSectionIndex;
+
+    win.postMessage(
+      {
+        source: "lac-cms-preview",
+        sections: buildPreviewSections(),
+        selectedSectionId: targetId,
+        sectionIndex: targetIndex,
+        editorFocus: targetFocus,
+        headerDraft,
+        footerDraft,
+      },
+      "*"
+    );
+  };
+
+  const selectSection = (section: CmsSectionRecord, index?: number) => {
+    const resolvedIndex =
+      typeof index === "number"
+        ? index
+        : sections.findIndex((s) => s.id === section.id);
+    setActiveTab("sections");
+    setEditorFocus("homepage");
+    setSelectedSectionId(section.id);
+    setEditTitle(section.title);
+    setEditContentJson(JSON.stringify(section.content ?? {}, null, 2));
+    setTimeout(() => {
+      postPreviewPayload("homepage", section.id, resolvedIndex);
+    }, 0);
   };
 
   const loadData = async () => {
@@ -177,7 +268,8 @@ export default function AdminDashboardClient({
         prodRes.json(),
       ]);
 
-      setSections(secData.sections ?? []);
+      const loadedSections: CmsSectionRecord[] = secData.sections ?? [];
+      setSections(loadedSections);
       setBrands(brData.brands ?? []);
       setCategories(catData.categories ?? []);
       setProducts(prodData.products ?? []);
@@ -187,9 +279,34 @@ export default function AdminDashboardClient({
         setMediaList(medData.media ?? []);
       }
 
-      const loadedSections: CmsSectionRecord[] = secData.sections ?? [];
+      const footerSec = loadedSections.find(
+        (s) =>
+          s.type.toUpperCase().includes("FOOTER") ||
+          s.key.toLowerCase().includes("footer")
+      );
+      if (footerSec?.content) {
+        setFooterDraft({
+          tagline:
+            typeof footerSec.content.tagline === "string"
+              ? footerSec.content.tagline
+              : "",
+          copyright:
+            typeof footerSec.content.copyright === "string"
+              ? footerSec.content.copyright
+              : "",
+          contactEmail:
+            typeof footerSec.content.contactEmail === "string"
+              ? footerSec.content.contactEmail
+              : "",
+        });
+      }
+
       if (loadedSections.length > 0 && selectedSectionId === null) {
-        selectSection(loadedSections[0]);
+        setSelectedSectionId(loadedSections[0].id);
+        setEditTitle(loadedSections[0].title);
+        setEditContentJson(
+          JSON.stringify(loadedSections[0].content ?? {}, null, 2)
+        );
       }
     } catch (err) {
       console.error(err);
@@ -207,16 +324,27 @@ export default function AdminDashboardClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const selectSection = (section: CmsSectionRecord) => {
-    setSelectedSectionId(section.id);
-    setEditTitle(section.title);
-    setEditContentJson(JSON.stringify(section.content ?? {}, null, 2));
+  useEffect(() => {
+    postPreviewPayload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    sections,
+    selectedSectionId,
+    editTitle,
+    editContentJson,
+    editorFocus,
+    headerDraft,
+    footerDraft,
+    previewViewport,
+    activeTab,
+  ]);
+
+  const updateSimpleField = (key: string, value: string | boolean) => {
+    if (!parsedEditorObj) return;
+    const next = { ...parsedEditorObj, [key]: value };
+    setEditContentJson(JSON.stringify(next, null, 2));
   };
 
-  const selectedSection =
-    sections.find((s) => s.id === selectedSectionId) ?? null;
-
-  // --- IMAGE UPLOAD TO DB ---
   const handleImageFileUpload = async (file: File) => {
     if (!file.type.startsWith("image/")) {
       showToast("error", "Please select a valid image file.");
@@ -262,7 +390,6 @@ export default function AdminDashboardClient({
     }
   };
 
-  // --- SECTIONS HANDLERS ---
   const handleToggleSection = async (section: CmsSectionRecord) => {
     try {
       const res = await fetch("/api/cms/sections", {
@@ -329,7 +456,7 @@ export default function AdminDashboardClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           id: selectedSection.id,
-          title: editTitle.trim() || selectedSection.title,
+          title: editTitle,
           content: parsedContent,
         }),
       });
@@ -346,22 +473,46 @@ export default function AdminDashboardClient({
     }
   };
 
-  const parsedEditorObj: Record<string, unknown> | null = (() => {
-    try {
-      const obj = JSON.parse(editContentJson);
-      return obj && typeof obj === "object" && !Array.isArray(obj) ? obj : null;
-    } catch {
-      return null;
+  const handleSaveFooterGroup = async () => {
+    const footerSec = sections.find(
+      (s) =>
+        s.type.toUpperCase().includes("FOOTER") ||
+        s.key.toLowerCase().includes("footer")
+    );
+    if (!footerSec) {
+      showToast("success", "Footer draft updated.");
+      return;
     }
-  })();
 
-  const updateSimpleField = (key: string, value: string | boolean) => {
-    if (!parsedEditorObj) return;
-    const next = { ...parsedEditorObj, [key]: value };
-    setEditContentJson(JSON.stringify(next, null, 2));
+    setSaving(true);
+    try {
+      const nextContent = {
+        ...(footerSec.content ?? {}),
+        tagline: footerDraft.tagline,
+        copyright: footerDraft.copyright,
+        contactEmail: footerDraft.contactEmail,
+      };
+      const res = await fetch("/api/cms/sections", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: footerSec.id,
+          content: nextContent,
+        }),
+      });
+      if (!res.ok) throw new Error();
+      const { section: updated } = await res.json();
+      setSections((prev) =>
+        prev.map((s) => (s.id === updated.id ? updated : s))
+      );
+      showToast("success", "Footer group saved to database.");
+    } catch {
+      showToast("error", "Failed to save footer group.");
+    } finally {
+      setSaving(false);
+    }
   };
 
-  // --- BRANDS HANDLERS ---
   const handleAddBrand = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newBrandName.trim() || !newBrandLogo.trim()) return;
@@ -417,7 +568,6 @@ export default function AdminDashboardClient({
     }
   };
 
-  // --- CATEGORIES HANDLERS ---
   const handleAddCategory = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCategoryName.trim()) return;
@@ -487,7 +637,6 @@ export default function AdminDashboardClient({
     }
   };
 
-  // --- PRODUCTS HANDLERS ---
   const openNewProductModal = () => {
     setProductForm({
       ...EMPTY_PRODUCT_FORM,
@@ -607,7 +756,6 @@ export default function AdminDashboardClient({
 
   return (
     <div className="relative z-100 min-h-screen bg-[#f4f3f0] text-[#1a1714] flex flex-col">
-      {/* Shopify-Style Top Bar */}
       <header className="h-14 bg-[#1a1714] text-[#fdfbf7] px-5 flex items-center justify-between border-b border-white/10 sticky top-0 z-20">
         <div className="flex items-center gap-3">
           <img
@@ -653,7 +801,6 @@ export default function AdminDashboardClient({
         </div>
       </header>
 
-      {/* Toast Notification */}
       {toast && (
         <div className="fixed bottom-5 right-5 z-50">
           <div
@@ -673,194 +820,463 @@ export default function AdminDashboardClient({
         </div>
       )}
 
-      {/* Workspace Shell */}
       <div className="flex-1 flex flex-col md:flex-row">
-        {/* Left Navigation Rail */}
-        <aside className="w-full md:w-64 bg-[#ebe8e1] border-b md:border-b-0 md:border-r border-[#dcd7cc] p-4 space-y-1.5">
-          <p className="px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-[#6b6256]">
-            Online Store
+        {/* Left Navigation Sidebar */}
+        <aside className="w-full md:w-68 bg-[#ebe8e1] border-b md:border-b-0 md:border-r border-[#dcd7cc] p-4 space-y-2 shrink-0">
+          <p className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-[#6b6256]">
+            Theme Editor
           </p>
+
           <button
             type="button"
-            onClick={() => setActiveTab("sections")}
-            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-bold transition-colors ${
-              activeTab === "sections"
+            onClick={() => {
+              setActiveTab("sections");
+              setEditorFocus("header");
+            }}
+            className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition-colors ${
+              activeTab === "sections" && editorFocus === "header"
                 ? "bg-white text-[#1a1714] shadow-xs"
                 : "text-[#4a4238] hover:bg-white/60"
             }`}
           >
-            <span className="flex items-center gap-2.5">
-              <Layers className="w-4 h-4 text-[#8c6d48]" />
-              Theme Sections
-            </span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#f4f3f0] text-[#6b6256]">
-              {sections.length}
+            <span className="flex items-center gap-2">
+              <PanelTop className="w-4 h-4 text-[#8c6d48]" />
+              Header Group
             </span>
           </button>
 
           <button
             type="button"
-            onClick={() => setActiveTab("brands")}
-            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-bold transition-colors ${
-              activeTab === "brands"
+            onClick={() => {
+              setActiveTab("sections");
+              setEditorFocus("footer");
+            }}
+            className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition-colors ${
+              activeTab === "sections" && editorFocus === "footer"
                 ? "bg-white text-[#1a1714] shadow-xs"
                 : "text-[#4a4238] hover:bg-white/60"
             }`}
           >
-            <span className="flex items-center gap-2.5">
-              <Tag className="w-4 h-4 text-[#8c6d48]" />
-              Brands Portfolio
-            </span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#f4f3f0] text-[#6b6256]">
-              {brands.length}
+            <span className="flex items-center gap-2">
+              <PanelBottom className="w-4 h-4 text-[#8c6d48]" />
+              Footer Group
             </span>
           </button>
 
-          <p className="px-3 pt-4 pb-1 text-[10px] font-bold uppercase tracking-[0.18em] text-[#6b6256]">
-            Wholesale Catalog
-          </p>
-          <button
-            type="button"
-            onClick={() => setActiveTab("categories")}
-            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-bold transition-colors ${
-              activeTab === "categories"
-                ? "bg-white text-[#1a1714] shadow-xs"
-                : "text-[#4a4238] hover:bg-white/60"
-            }`}
-          >
-            <span className="flex items-center gap-2.5">
-              <FolderTree className="w-4 h-4 text-[#8c6d48]" />
-              Categories
-            </span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#f4f3f0] text-[#6b6256]">
-              {categories.length}
-            </span>
-          </button>
+          <div className="pt-0.5">
+            <div
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition-colors ${
+                activeTab === "sections" && editorFocus === "homepage"
+                  ? "bg-white text-[#1a1714] shadow-xs"
+                  : "text-[#4a4238] hover:bg-white/60"
+              }`}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab("sections");
+                  setEditorFocus("homepage");
+                  setThemeSectionsOpen(true);
+                }}
+                className="flex items-center gap-2 flex-1 text-left"
+              >
+                <Layers className="w-4 h-4 text-[#8c6d48]" />
+                <span>Theme Sections</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setThemeSectionsOpen((prev) => !prev)}
+                className="p-0.5 rounded hover:bg-[#f4f3f0] text-[#6b6256]"
+                title={
+                  themeSectionsOpen ? "Collapse sections" : "Expand sections"
+                }
+              >
+                {themeSectionsOpen ? (
+                  <ChevronDown className="w-4 h-4" />
+                ) : (
+                  <ChevronRight className="w-4 h-4" />
+                )}
+              </button>
+            </div>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab("products")}
-            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-bold transition-colors ${
-              activeTab === "products"
-                ? "bg-white text-[#1a1714] shadow-xs"
-                : "text-[#4a4238] hover:bg-white/60"
-            }`}
-          >
-            <span className="flex items-center gap-2.5">
-              <Package className="w-4 h-4 text-[#8c6d48]" />
-              Products
-            </span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#f4f3f0] text-[#6b6256]">
-              {products.length}
-            </span>
-          </button>
+            {themeSectionsOpen && (
+              <div className="mt-1 ml-2 pl-2.5 border-l border-[#d3cdc0] space-y-1">
+                {sections.map((sec, idx) => {
+                  const isCurrent =
+                    activeTab === "sections" &&
+                    editorFocus === "homepage" &&
+                    sec.id === selectedSectionId;
+                  return (
+                    <div
+                      key={sec.id}
+                      onClick={() => selectSection(sec, idx)}
+                      className={`group flex items-center justify-between gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] cursor-pointer transition-colors ${
+                        isCurrent
+                          ? "bg-[#1a1714] text-[#fdfbf7] font-semibold"
+                          : "text-[#4a4238] hover:bg-white/70"
+                      }`}
+                    >
+                      <span
+                        className={`truncate ${
+                          sec.isActive ? "" : "line-through opacity-55"
+                        }`}
+                      >
+                        {idx + 1}. {sec.title}
+                      </span>
+                      <span
+                        className={`text-[9px] px-1.5 py-0.5 rounded shrink-0 ${
+                          sec.isActive
+                            ? isCurrent
+                              ? "bg-[#F8B93C]/20 text-[#F8B93C]"
+                              : "bg-emerald-100/80 text-emerald-800"
+                            : "bg-stone-200 text-stone-600"
+                        }`}
+                      >
+                        {sec.isActive ? "ON" : "OFF"}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="pt-3 mt-3 border-t border-[#d4cec1]">
+            <p className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-[#6b6256]">
+              Wholesale Catalog
+            </p>
+
+            <div className="space-y-1 mt-1">
+              <button
+                type="button"
+                onClick={() => setActiveTab("brands")}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition-colors ${
+                  activeTab === "brands"
+                    ? "bg-white text-[#1a1714] shadow-xs"
+                    : "text-[#4a4238] hover:bg-white/60"
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  <Tag className="w-4 h-4 text-[#8c6d48]" />
+                  Brands
+                </span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#f4f3f0] text-[#6b6256]">
+                  {brands.length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab("categories")}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition-colors ${
+                  activeTab === "categories"
+                    ? "bg-white text-[#1a1714] shadow-xs"
+                    : "text-[#4a4238] hover:bg-white/60"
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  <FolderTree className="w-4 h-4 text-[#8c6d48]" />
+                  Categories
+                </span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#f4f3f0] text-[#6b6256]">
+                  {categories.length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab("products")}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition-colors ${
+                  activeTab === "products"
+                    ? "bg-white text-[#1a1714] shadow-xs"
+                    : "text-[#4a4238] hover:bg-white/60"
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  <Package className="w-4 h-4 text-[#8c6d48]" />
+                  Products
+                </span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#f4f3f0] text-[#6b6256]">
+                  {products.length}
+                </span>
+              </button>
+            </div>
+          </div>
         </aside>
 
         {/* Main Workspace */}
-        <main className="flex-1 p-6 md:p-8 overflow-y-auto">
+        <main className="flex-1 min-w-0 p-4 md:p-5 overflow-y-auto">
           {loading ? (
             <div className="py-20 text-center text-xs text-[#6b6256]">
               Loading CMS data...
             </div>
           ) : activeTab === "sections" ? (
-            <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-              {/* Left: Section Order & Visibility List */}
-              <div className="lg:col-span-5 bg-white border border-[#e0dbd0] rounded-xl overflow-hidden shadow-xs">
-                <div className="px-5 py-4 border-b border-[#ece8df]">
-                  <h2 className="text-sm font-bold text-[#1a1714]">
-                    Homepage Sections
-                  </h2>
-                  <p className="text-[11px] text-[#6b6256]">
-                    Manage section order and visibility on the storefront.
-                  </p>
-                </div>
+            <div className="w-full flex flex-col lg:flex-row gap-4 items-start">
+              {/* Center Column: Wider Live Preview */}
+              <div className="flex-1 min-w-0 w-full bg-white border border-[#e0dbd0] rounded-xl overflow-hidden shadow-xs">
+                <div className="px-4 py-3 bg-[#faf8f4] border-b border-[#ece8df] flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-[#8c6d48]">
+                      Theme Editor Live Preview
+                    </p>
+                    <h2 className="text-xs font-bold text-[#1a1714]">
+                      {editorFocus === "header"
+                        ? "Header Group"
+                        : editorFocus === "footer"
+                        ? "Footer Group"
+                        : selectedSection
+                        ? selectedSection.title
+                        : "Homepage"}
+                    </h2>
+                  </div>
 
-                <div className="divide-y divide-[#f0ece3]">
-                  {sections.map((section, idx) => {
-                    const isSelected = section.id === selectedSectionId;
-                    return (
-                      <div
-                        key={section.id}
-                        onClick={() => selectSection(section)}
-                        className={`px-4 py-3.5 flex items-center justify-between gap-3 cursor-pointer transition-colors ${
-                          isSelected
-                            ? "bg-[#fdfbf7] border-l-4 border-l-[#8c6d48]"
-                            : "hover:bg-[#faf8f4]"
+                  <div className="flex items-center gap-2">
+                    {editorFocus === "homepage" &&
+                      selectedSection &&
+                      selectedSectionIndex >= 0 && (
+                        <div className="flex items-center gap-1 bg-[#ebe8e1] px-2 py-1 rounded-lg">
+                          <button
+                            type="button"
+                            disabled={selectedSectionIndex === 0}
+                            onClick={() =>
+                              handleMoveSection(selectedSectionIndex, -1)
+                            }
+                            className="p-0.5 rounded hover:bg-white disabled:opacity-30"
+                            title="Move Section Up"
+                          >
+                            <ArrowUp className="w-3 h-3" />
+                          </button>
+                          <button
+                            type="button"
+                            disabled={
+                              selectedSectionIndex === sections.length - 1
+                            }
+                            onClick={() =>
+                              handleMoveSection(selectedSectionIndex, 1)
+                            }
+                            className="p-0.5 rounded hover:bg-white disabled:opacity-30"
+                            title="Move Section Down"
+                          >
+                            <ArrowDown className="w-3 h-3" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleSection(selectedSection)}
+                            className="px-1.5 py-0.5 rounded text-[10px] font-bold hover:bg-white"
+                          >
+                            {selectedSection.isActive ? "ON" : "OFF"}
+                          </button>
+                        </div>
+                      )}
+
+                    <div className="flex items-center gap-1 bg-[#ebe8e1] p-1 rounded-lg">
+                      <button
+                        type="button"
+                        onClick={() => setPreviewViewport("desktop")}
+                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-[10px] font-bold transition-colors ${
+                          previewViewport === "desktop"
+                            ? "bg-[#1a1714] text-white"
+                            : "text-[#4a4238]"
                         }`}
                       >
-                        <div className="min-w-0">
-                          <p
-                            className={`text-xs font-bold truncate ${
-                              section.isActive
-                                ? "text-[#1a1714]"
-                                : "text-[#9c9286] line-through"
-                            }`}
-                          >
-                            {section.title}
-                          </p>
-                          <p className="text-[10px] font-mono text-[#8c6d48] truncate">
-                            {section.type}
-                          </p>
-                        </div>
+                        <Monitor className="w-3 h-3" />
+                        Desktop
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPreviewViewport("mobile")}
+                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-[10px] font-bold transition-colors ${
+                          previewViewport === "mobile"
+                            ? "bg-[#1a1714] text-white"
+                            : "text-[#4a4238]"
+                        }`}
+                      >
+                        <Smartphone className="w-3 h-3" />
+                        Mobile
+                      </button>
+                    </div>
+                  </div>
+                </div>
 
-                        <div
-                          className="flex items-center gap-1 shrink-0"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <button
-                            type="button"
-                            disabled={idx === 0}
-                            onClick={() => handleMoveSection(idx, -1)}
-                            className="p-1.5 rounded hover:bg-[#ebe8e1] disabled:opacity-30"
-                            title="Move Up"
-                          >
-                            <ArrowUp className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            disabled={idx === sections.length - 1}
-                            onClick={() => handleMoveSection(idx, 1)}
-                            className="p-1.5 rounded hover:bg-[#ebe8e1] disabled:opacity-30"
-                            title="Move Down"
-                          >
-                            <ArrowDown className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleToggleSection(section)}
-                            className={`p-1.5 rounded ${
-                              section.isActive
-                                ? "text-[#1a1714] hover:bg-[#ebe8e1]"
-                                : "text-[#9c9286] hover:bg-[#ebe8e1]"
-                            }`}
-                            title={
-                              section.isActive ? "Hide Section" : "Show Section"
-                            }
-                          >
-                            {section.isActive ? (
-                              <Eye className="w-3.5 h-3.5" />
-                            ) : (
-                              <EyeOff className="w-3.5 h-3.5" />
-                            )}
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
+                <div className="p-3 bg-[#e4dfd5] flex justify-center">
+                  <div
+                    className={`w-full bg-white border border-[#cfc6b6] rounded-xl overflow-hidden shadow-md transition-all ${
+                      previewViewport === "mobile"
+                        ? "max-w-[390px]"
+                        : "max-w-full"
+                    }`}
+                  >
+                    <iframe
+                      ref={previewIframeRef}
+                      src="/?cmsPreview=1"
+                      title="Storefront Theme Preview"
+                      onLoad={() => postPreviewPayload()}
+                      className="w-full h-[780px] border-0 block bg-white"
+                    />
+                  </div>
                 </div>
               </div>
 
-              {/* Right: Section Content Inspector */}
-              <div className="lg:col-span-7 bg-white border border-[#e0dbd0] rounded-xl overflow-hidden shadow-xs">
-                {selectedSection ? (
+              {/* Right Column: Same Width as Left Sidebar */}
+              <div className="w-full lg:w-68 shrink-0 bg-white border border-[#e0dbd0] rounded-xl overflow-hidden shadow-xs">
+                {editorFocus === "header" ? (
                   <>
-                    <div className="px-6 py-4 border-b border-[#ece8df] flex items-center justify-between gap-4">
+                    <div className="px-4 py-3.5 border-b border-[#ece8df]">
+                      <p className="text-[10px] font-mono uppercase text-[#8c6d48]">
+                        GLOBAL HEADER GROUP
+                      </p>
+                      <h2 className="text-sm font-bold text-[#1a1714]">
+                        Edit: Header Group
+                      </h2>
+                    </div>
+                    <div className="p-4 space-y-3">
                       <div>
-                        <p className="text-[10px] font-mono uppercase text-[#8c6d48]">
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256] mb-1">
+                          Brand Label
+                        </label>
+                        <input
+                          type="text"
+                          value={headerDraft.brandLabel}
+                          onChange={(e) =>
+                            setHeaderDraft({
+                              ...headerDraft,
+                              brandLabel: e.target.value,
+                            })
+                          }
+                          className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256] mb-1">
+                          Top Bar Note
+                        </label>
+                        <input
+                          type="text"
+                          value={headerDraft.announcement}
+                          onChange={(e) =>
+                            setHeaderDraft({
+                              ...headerDraft,
+                              announcement: e.target.value,
+                            })
+                          }
+                          className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256] mb-1">
+                          Action Button Label
+                        </label>
+                        <input
+                          type="text"
+                          value={headerDraft.ctaLabel}
+                          onChange={(e) =>
+                            setHeaderDraft({
+                              ...headerDraft,
+                              ctaLabel: e.target.value,
+                            })
+                          }
+                          className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256] mb-1">
+                          Action Link
+                        </label>
+                        <input
+                          type="text"
+                          value={headerDraft.ctaHref}
+                          onChange={(e) =>
+                            setHeaderDraft({
+                              ...headerDraft,
+                              ctaHref: e.target.value,
+                            })
+                          }
+                          className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
+                        />
+                      </div>
+                    </div>
+                  </>
+                ) : editorFocus === "footer" ? (
+                  <>
+                    <div className="px-4 py-3.5 border-b border-[#ece8df] flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-mono uppercase text-[#8c6d48] truncate">
+                          GLOBAL FOOTER GROUP
+                        </p>
+                        <h2 className="text-sm font-bold text-[#1a1714] truncate">
+                          Edit: Footer Group
+                        </h2>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={saving}
+                        onClick={handleSaveFooterGroup}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#1a1714] hover:bg-[#8c6d48] text-white text-[11px] font-bold transition-colors disabled:opacity-50 shrink-0"
+                      >
+                        <Save className="w-3 h-3" />
+                        {saving ? "..." : "Save"}
+                      </button>
+                    </div>
+                    <div className="p-4 space-y-3">
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256] mb-1">
+                          Footer Tagline
+                        </label>
+                        <textarea
+                          rows={3}
+                          value={footerDraft.tagline}
+                          onChange={(e) =>
+                            setFooterDraft({
+                              ...footerDraft,
+                              tagline: e.target.value,
+                            })
+                          }
+                          className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256] mb-1">
+                          Copyright Line
+                        </label>
+                        <input
+                          type="text"
+                          value={footerDraft.copyright}
+                          onChange={(e) =>
+                            setFooterDraft({
+                              ...footerDraft,
+                              copyright: e.target.value,
+                            })
+                          }
+                          className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256] mb-1">
+                          Contact Email
+                        </label>
+                        <input
+                          type="email"
+                          value={footerDraft.contactEmail}
+                          onChange={(e) =>
+                            setFooterDraft({
+                              ...footerDraft,
+                              contactEmail: e.target.value,
+                            })
+                          }
+                          className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
+                        />
+                      </div>
+                    </div>
+                  </>
+                ) : selectedSection ? (
+                  <>
+                    <div className="px-4 py-3.5 border-b border-[#ece8df] flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-mono uppercase text-[#8c6d48] truncate">
                           {selectedSection.key}
                         </p>
-                        <h2 className="text-base font-bold text-[#1a1714]">
-                          Edit: {selectedSection.title}
+                        <h2 className="text-sm font-bold text-[#1a1714] truncate">
+                          {selectedSection.title}
                         </h2>
                       </div>
 
@@ -868,37 +1284,37 @@ export default function AdminDashboardClient({
                         type="button"
                         disabled={saving}
                         onClick={handleSaveSection}
-                        className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#1a1714] hover:bg-[#8c6d48] text-white text-xs font-bold transition-colors disabled:opacity-50"
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#1a1714] hover:bg-[#8c6d48] text-white text-[11px] font-bold transition-colors disabled:opacity-50 shrink-0"
                       >
-                        <Save className="w-3.5 h-3.5" />
-                        {saving ? "Saving..." : "Save Changes"}
+                        <Save className="w-3 h-3" />
+                        {saving ? "..." : "Save"}
                       </button>
                     </div>
 
-                    <div className="p-6 space-y-5">
+                    <div className="p-4 space-y-3">
                       <div>
-                        <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256] mb-1.5">
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256] mb-1">
                           Admin Label
                         </label>
                         <input
                           type="text"
                           value={editTitle}
                           onChange={(e) => setEditTitle(e.target.value)}
-                          className="w-full px-3.5 py-2 text-sm bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
+                          className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
                         />
                       </div>
 
                       {parsedEditorObj && (
-                        <div className="space-y-3 pt-2 border-t border-[#f0ece3]">
+                        <div className="space-y-2 pt-2 border-t border-[#f0ece3]">
                           <p className="text-[10px] font-bold uppercase tracking-wider text-[#8c6d48]">
-                            Quick Content Fields
+                            Content Fields
                           </p>
                           {Object.entries(parsedEditorObj).map(([k, v]) => {
                             if (typeof v === "string") {
-                              const isLong = v.length > 80;
+                              const isLong = v.length > 70;
                               return (
                                 <div key={k}>
-                                  <label className="block text-[11px] font-semibold text-[#4a4238] mb-1 capitalize">
+                                  <label className="block text-[10px] font-semibold text-[#4a4238] mb-0.5 capitalize">
                                     {k}
                                   </label>
                                   {isLong ? (
@@ -908,7 +1324,7 @@ export default function AdminDashboardClient({
                                       onChange={(e) =>
                                         updateSimpleField(k, e.target.value)
                                       }
-                                      className="w-full px-3 py-2 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
+                                      className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
                                     />
                                   ) : (
                                     <input
@@ -917,7 +1333,7 @@ export default function AdminDashboardClient({
                                       onChange={(e) =>
                                         updateSimpleField(k, e.target.value)
                                       }
-                                      className="w-full px-3 py-2 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
+                                      className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
                                     />
                                   )}
                                 </div>
@@ -929,28 +1345,27 @@ export default function AdminDashboardClient({
                       )}
 
                       <div className="pt-2 border-t border-[#f0ece3]">
-                        <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256] mb-1.5">
-                          Full Section Payload (JSON)
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256] mb-1">
+                          Payload (JSON)
                         </label>
                         <textarea
-                          rows={12}
+                          rows={9}
                           value={editContentJson}
                           onChange={(e) => setEditContentJson(e.target.value)}
                           spellCheck={false}
-                          className="w-full p-3.5 text-xs font-mono bg-[#1a1714] text-[#fdfbf7] rounded-lg border border-[#2b2621] focus:outline-none focus:border-[#F8B93C]"
+                          className="w-full p-2.5 text-[11px] font-mono bg-[#1a1714] text-[#fdfbf7] rounded-lg border border-[#2b2621] focus:outline-none focus:border-[#F8B93C]"
                         />
                       </div>
                     </div>
                   </>
                 ) : (
-                  <div className="p-12 text-center text-xs text-[#6b6256]">
-                    Select a section on the left to start editing.
+                  <div className="p-8 text-center text-xs text-[#6b6256]">
+                    Select a section on the left.
                   </div>
                 )}
               </div>
             </div>
           ) : activeTab === "brands" ? (
-            /* BRANDS MANAGER TAB */
             <div className="max-w-5xl mx-auto space-y-6">
               <form
                 onSubmit={handleAddBrand}
@@ -1050,7 +1465,6 @@ export default function AdminDashboardClient({
               </div>
             </div>
           ) : activeTab === "categories" ? (
-            /* CATEGORIES MANAGER TAB */
             <div className="max-w-5xl mx-auto space-y-6">
               <form
                 onSubmit={handleAddCategory}
@@ -1159,7 +1573,6 @@ export default function AdminDashboardClient({
               </div>
             </div>
           ) : (
-            /* PRODUCTS MANAGER TAB */
             <div className="max-w-6xl mx-auto space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="relative w-full sm:w-80">
@@ -1292,7 +1705,6 @@ export default function AdminDashboardClient({
         </main>
       </div>
 
-      {/* Add / Edit Product Modal */}
       {showProductModal && (
         <div
           onClick={() => setShowProductModal(false)}
@@ -1480,7 +1892,6 @@ export default function AdminDashboardClient({
                 </div>
               </div>
 
-              {/* Product Image: Upload + Database Media Library + Manual Path */}
               <div className="space-y-3 pt-2 border-t border-[#f0ece3]">
                 <div className="flex items-center justify-between gap-2">
                   <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
@@ -1557,7 +1968,7 @@ export default function AdminDashboardClient({
                           image: e.target.value,
                         })
                       }
-                      placeholder="Or paste /public path or URL (e.g. /hero-products.jpg)"
+                      placeholder="Or paste /public path or URL"
                       className="w-full px-3 py-1.5 text-xs bg-white border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
                     />
                   </div>

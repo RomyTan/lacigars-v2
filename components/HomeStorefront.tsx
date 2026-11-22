@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { HeroClouds } from "@/components/HeroClouds";
 import { INITIAL_HERO_CONFIG } from "@/lib/storefront-data";
@@ -16,15 +17,103 @@ interface HomeStorefrontProps {
   brands: LiveBrand[];
 }
 
-export function HomeStorefront({ sections, brands }: HomeStorefrontProps) {
+export function HomeStorefront({
+  sections: initialSections,
+  brands,
+}: HomeStorefrontProps) {
+  const [sections, setSections] = useState<LiveCmsSection[]>(initialSections);
+  const [selectedSectionId, setSelectedSectionId] = useState<
+    number | string | null
+  >(null);
+
+  useEffect(() => {
+    setSections(initialSections);
+  }, [initialSections]);
+
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      const data = event.data;
+      if (!data || data.source !== "lac-cms-preview") return;
+
+      if (Array.isArray(data.sections)) {
+        const sorted = [...data.sections].sort(
+          (a: LiveCmsSection, b: LiveCmsSection) =>
+            (a.sortOrder ?? 0) - (b.sortOrder ?? 0)
+        );
+        setSections(sorted);
+      }
+
+      if (data.selectedSectionId !== undefined) {
+        setSelectedSectionId(data.selectedSectionId);
+      }
+
+      const targetIndex =
+        typeof data.sectionIndex === "number" ? data.sectionIndex : -1;
+
+      requestAnimationFrame(() => {
+        if (data.editorFocus === "footer") {
+          const footerEl = document.querySelector("[data-cms-footer]");
+          footerEl?.scrollIntoView({ behavior: "smooth", block: "end" });
+          return;
+        }
+
+        const byId =
+          data.selectedSectionId !== null && data.selectedSectionId !== undefined
+            ? document.querySelector(
+                `[data-cms-section-id="${String(data.selectedSectionId)}"]`
+              )
+            : null;
+        const byIndex =
+          targetIndex >= 0
+            ? document.querySelector(
+                `[data-cms-section-index="${targetIndex}"]`
+              )
+            : null;
+
+        const targetEl = byId || byIndex;
+        if (targetEl instanceof HTMLElement) {
+          targetEl.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      });
+    };
+
+    window.addEventListener("message", onMessage);
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({ source: "lac-cms-preview-ready" }, "*");
+    }
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
+
   const hasHero = sections.some((s) => s.type === "HERO_3D" && s.isActive);
 
   return (
     <div className="relative min-h-screen w-full overflow-x-hidden bg-[#fdfbf7] text-[#2b2621]">
       {hasHero && <HeroClouds />}
 
-      {sections.map((section) => {
+      {sections.map((section, idx) => {
         if (!section.isActive) return null;
+
+        const isSelected =
+          selectedSectionId !== null &&
+          String(section.id) === String(selectedSectionId);
+
+        const wrapSection = (node: React.ReactNode, isFooter = false) => (
+          <div
+            key={section.key ?? `${section.type}-${idx}`}
+            data-cms-section-id={
+              section.id !== undefined ? String(section.id) : ""
+            }
+            data-cms-section-index={idx}
+            {...(isFooter ? { "data-cms-footer": "" } : {})}
+            className={
+              isSelected
+                ? "outline-2 outline-offset-[-2px] outline-[#F8B93C]"
+                : undefined
+            }
+          >
+            {node}
+          </div>
+        );
 
         switch (section.type) {
           case "HERO_3D": {
@@ -36,9 +125,8 @@ export function HomeStorefront({ sections, brands }: HomeStorefrontProps) {
               ? hero.blocks
               : INITIAL_HERO_CONFIG.blocks;
 
-            return (
+            return wrapSection(
               <section
-                key={section.key}
                 id="home"
                 className="relative min-h-screen w-full flex flex-col justify-center items-center px-6 md:px-8 py-24 z-10 overflow-hidden"
               >
@@ -203,21 +291,20 @@ export function HomeStorefront({ sections, brands }: HomeStorefrontProps) {
           }
 
           case "EDITORIAL_CATEGORIES":
-            return <EditorialCategoriesSection key={section.key} />;
+            return wrapSection(<EditorialCategoriesSection />);
 
           case "EDITORIAL_BANNER":
-            return <EditorialBannerSection key={section.key} />;
+            return wrapSection(<EditorialBannerSection />);
 
           case "FEATURED_PRODUCT":
-            return <FeaturedProductSection key={section.key} />;
+            return wrapSection(<FeaturedProductSection />);
 
           case "BEST_SELLERS":
-            return <BestSellersSection key={section.key} />;
+            return wrapSection(<BestSellersSection />);
 
           case "BRAND_MARQUEE":
-            return (
+            return wrapSection(
               <BrandMarqueeSection
-                key={section.key}
                 brands={brands}
                 content={
                   section.content as {
@@ -231,7 +318,7 @@ export function HomeStorefront({ sections, brands }: HomeStorefrontProps) {
             );
 
           case "FOOTER":
-            return <FooterSection key={section.key} />;
+            return wrapSection(<FooterSection />, true);
 
           default:
             return null;
