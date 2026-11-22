@@ -1,54 +1,46 @@
-import { PrismaClient } from '@prisma/client';
-const prisma = new PrismaClient();
+import { prisma } from "../lib/prisma";
 
 async function main() {
-  // 1. Buat Grup Kustomer
-  const groupDistributor = await prisma.customerGroup.create({
-    data: { name: 'Distributor' }
+  let category = await prisma.category.findFirst({
+    where: { name: "Premium Cigars" },
   });
 
-  // 2. Buat User Kustomer
-  await prisma.user.create({
-    data: {
-      email: 'client@store.com',
-      passwordHash: 'dummyhash123',
-      name: 'John Doe',
-      companyName: 'Doe Cigar Lounge',
-      role: 'CUSTOMER',
-      groupId: groupDistributor.id
-    }
+  if (!category) {
+    category = await prisma.category.create({
+      data: {
+        name: "Premium Cigars",
+        fullName: "Premium Hand-Rolled Cigars",
+        isActive: true,
+        isPublic: true,
+      },
+    });
+  }
+
+  await prisma.product.upsert({
+    where: { sku: "LAC-001" },
+    update: {},
+    create: {
+      sku: "LAC-001",
+      name: "Habana Reserve Churchill",
+      description: "Premium hand-rolled cigar.",
+      brand: "Latin American Cigars",
+      origin: "Nicaragua",
+      shape: "Churchill",
+      boxInfo: "Box of 20",
+      quickBooksPrice: 200.0,
+      wholesalePrice: 150.0,
+      isActive: true,
+      publicVisibilityOverride: true,
+      categoryId: category.id,
+    },
   });
 
-  // 3. Buat Kategori & Produk
-  const cat = await prisma.category.create({
-    data: { name: 'Premium Cigars' }
-  });
-
-  const product = await prisma.product.create({
-    data: {
-      sku: 'LAC-001',
-      name: 'Habana Reserve Churchill',
-      description: 'Premium hand-rolled cigar.',
-      basePrice: 200.00,
-      categoryId: cat.id
-    }
-  });
-
-  // 4. Set Harga Khusus Grup Distributor (Tier Pricing)
-  await prisma.tierPrice.create({
-    data: {
-      groupId: groupDistributor.id,
-      productId: product.id,
-      price: 150.00 // Harga lebih murah dari basePrice
-    }
-  });
-
-  console.log('✅ Seeding data dummy berhasil!');
+  console.log("Seed completed.");
 }
 
 main()
-  .catch((e) => {
-    console.error(e);
+  .catch((error) => {
+    console.error("Seed error:", error);
     process.exit(1);
   })
   .finally(async () => {
