@@ -414,16 +414,16 @@ export default function AdminDashboardClient({
     setEditContentJson(JSON.stringify(next, null, 2));
   };
 
-  const handleImageFileUpload = async (file: File) => {
+  const updateNestedFields = (patch: Record<string, unknown>) => {
+    const base = parsedEditorObj ?? {};
+    setEditContentJson(JSON.stringify({ ...base, ...patch }, null, 2));
+  };
+
+  const uploadMediaFile = async (file: File) => {
     if (!file.type.startsWith("image/")) {
       showToast("error", "Please select a valid image file.");
-      return;
+      return null;
     }
-    if (file.size > 3 * 1024 * 1024) {
-      showToast("error", "Image size must be under 3MB.");
-      return;
-    }
-
     setUploadingImage(true);
     try {
       const dataUrl = await new Promise<string>((resolve, reject) => {
@@ -446,17 +446,45 @@ export default function AdminDashboardClient({
       const data = await res.json();
       if (!res.ok) {
         showToast("error", data.error || "Failed to upload image.");
-        return;
+        return null;
       }
 
       setMediaList((prev) => [data.media, ...prev]);
-      setProductForm((prev) => ({ ...prev, image: data.media.url }));
-      showToast("success", `Uploaded "${file.name}" to media library.`);
+      return data.media as CmsMediaRecord;
     } catch {
       showToast("error", "Failed to upload image.");
+      return null;
     } finally {
       setUploadingImage(false);
     }
+  };
+
+  const handleSectionImageUpload = async (file: File) => {
+    const uploaded = await uploadMediaFile(file);
+    if (!uploaded) return;
+    const currentImages = Array.isArray(parsedEditorObj?.images)
+      ? (parsedEditorObj.images as string[])
+      : [];
+    updateNestedFields({ images: [...currentImages, uploaded.url] });
+    showToast("success", `Image "${file.name}" added to section.`);
+  };
+
+  const handleSectionBgUpload = async (file: File) => {
+    const uploaded = await uploadMediaFile(file);
+    if (!uploaded) return;
+    updateNestedFields({ bgImage: uploaded.url });
+    showToast("success", `Background "${file.name}" applied.`);
+  };
+
+  const handleImageFileUpload = async (file: File) => {
+    if (file.size > 3 * 1024 * 1024) {
+      showToast("error", "Image size must be under 3MB.");
+      return;
+    }
+    const uploaded = await uploadMediaFile(file);
+    if (!uploaded) return;
+    setProductForm((prev) => ({ ...prev, image: uploaded.url }));
+    showToast("success", `Uploaded "${file.name}" to media library.`);
   };
 
   const handleToggleSection = async (section: CmsSectionRecord) => {
@@ -863,6 +891,9 @@ export default function AdminDashboardClient({
     );
   });
 
+  const isFeaturedProduct = selectedSection?.type === "FEATURED_PRODUCT";
+  const isBestSellers = selectedSection?.type === "BEST_SELLERS";
+
   return (
     <div className="relative z-100 min-h-screen bg-[#f4f3f0] text-[#1a1714] flex flex-col">
       <header className="h-14 bg-[#1a1714] text-[#fdfbf7] px-5 flex items-center justify-between border-b border-white/10 sticky top-0 z-20">
@@ -1050,7 +1081,6 @@ export default function AdminDashboardClient({
             )}
           </div>
 
-          {/* Orders Menu */}
           <div className="pt-2">
             <button
               type="button"
@@ -1071,7 +1101,6 @@ export default function AdminDashboardClient({
             </button>
           </div>
 
-          {/* Clear Divider + Wholesale Catalog */}
           <div className="pt-3 mt-3 border-t border-[#d4cec1]">
             <p className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-[#6b6256]">
               Wholesale Catalog
@@ -1152,7 +1181,6 @@ export default function AdminDashboardClient({
             </div>
           </div>
 
-          {/* Files Menu */}
           <div className="pt-3 mt-3 border-t border-[#d4cec1]">
             <button
               type="button"
@@ -1438,7 +1466,7 @@ export default function AdminDashboardClient({
                       </div>
                     </div>
                   </>
-                ) : selectedSection ? (
+                ) : selectedSection && parsedEditorObj ? (
                   <>
                     <div className="px-4 py-3.5 border-b border-[#ece8df] flex items-center justify-between gap-2">
                       <div className="min-w-0">
@@ -1473,6 +1501,653 @@ export default function AdminDashboardClient({
                           className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
                         />
                       </div>
+
+                      {/* UNIVERSAL HEADING & TEXT COLOR */}
+                      <div className="space-y-2 pt-2 border-t border-[#f0ece3]">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-[#8c6d48]">
+                          Heading &amp; Text Color
+                        </p>
+                        <input
+                          type="text"
+                          value={String(parsedEditorObj.heading ?? "")}
+                          onChange={(e) =>
+                            updateNestedFields({ heading: e.target.value })
+                          }
+                          placeholder="Section heading..."
+                          className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
+                        />
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-[10px] text-[#6b6256] mb-0.5">
+                              Font Size (px)
+                            </label>
+                            <input
+                              type="number"
+                              min={14}
+                              max={84}
+                              value={Number(parsedEditorObj.headingSize ?? 36)}
+                              onChange={(e) =>
+                                updateNestedFields({
+                                  headingSize: Number(e.target.value) || 36,
+                                })
+                              }
+                              className="w-full px-2 py-1 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] text-[#6b6256] mb-0.5">
+                              Style
+                            </label>
+                            <select
+                              value={String(
+                                parsedEditorObj.headingStyle ?? "bold"
+                              )}
+                              onChange={(e) =>
+                                updateNestedFields({
+                                  headingStyle: e.target.value,
+                                })
+                              }
+                              className="w-full px-2 py-1 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
+                            >
+                              <option value="regular">Regular</option>
+                              <option value="bold">Bold</option>
+                              <option value="italic">Italic</option>
+                              <option value="bold-italic">Bold Italic</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] text-[#6b6256] mb-0.5">
+                            Text Color
+                          </label>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="color"
+                              value={String(
+                                parsedEditorObj.textColor || "#1a1714"
+                              )}
+                              onChange={(e) =>
+                                updateNestedFields({
+                                  textColor: e.target.value,
+                                })
+                              }
+                              className="h-7 w-9 rounded border border-[#dcd4c5] cursor-pointer bg-white p-0.5"
+                            />
+                            <input
+                              type="text"
+                              value={String(
+                                parsedEditorObj.textColor || "#1a1714"
+                              )}
+                              onChange={(e) =>
+                                updateNestedFields({
+                                  textColor: e.target.value,
+                                })
+                              }
+                              placeholder="#1a1714"
+                              className="flex-1 px-2.5 py-1 text-xs font-mono bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* UNIVERSAL DIVIDER (ON/OFF, WIDTH, THICKNESS) */}
+                      <div className="space-y-2 pt-2 border-t border-[#f0ece3]">
+                        <div className="flex items-center justify-between">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-[#8c6d48]">
+                            Divider
+                          </p>
+                          <label className="inline-flex items-center gap-1.5 text-[11px] font-semibold cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(
+                                parsedEditorObj.showDivider ?? false
+                              )}
+                              onChange={(e) =>
+                                updateNestedFields({
+                                  showDivider: e.target.checked,
+                                })
+                              }
+                              className="accent-[#8c6d48]"
+                            />
+                            {parsedEditorObj.showDivider ? "ON" : "OFF"}
+                          </label>
+                        </div>
+                        {Boolean(parsedEditorObj.showDivider) && (
+                          <div className="space-y-2">
+                            <div>
+                              <label className="block text-[10px] text-[#6b6256] mb-0.5">
+                                Width (
+                                {Number(parsedEditorObj.dividerWidth ?? 100)}
+                                %)
+                              </label>
+                              <input
+                                type="range"
+                                min={10}
+                                max={100}
+                                value={Number(
+                                  parsedEditorObj.dividerWidth ?? 100
+                                )}
+                                onChange={(e) =>
+                                  updateNestedFields({
+                                    dividerWidth: Number(e.target.value),
+                                  })
+                                }
+                                className="w-full accent-[#8c6d48]"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] text-[#6b6256] mb-0.5">
+                                Thickness (
+                                {Number(
+                                  parsedEditorObj.dividerThickness ?? 1
+                                )}
+                                px)
+                              </label>
+                              <input
+                                type="range"
+                                min={1}
+                                max={10}
+                                value={Number(
+                                  parsedEditorObj.dividerThickness ?? 1
+                                )}
+                                onChange={(e) =>
+                                  updateNestedFields({
+                                    dividerThickness: Number(e.target.value),
+                                  })
+                                }
+                                className="w-full accent-[#8c6d48]"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* UNIVERSAL BACKGROUND COLOR / IMAGE */}
+                      <div className="space-y-2 pt-2 border-t border-[#f0ece3]">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-[#8c6d48]">
+                          Background
+                        </p>
+
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="color"
+                            value={String(
+                              parsedEditorObj.bgColor || "#fdfbf7"
+                            )}
+                            onChange={(e) =>
+                              updateNestedFields({ bgColor: e.target.value })
+                            }
+                            className="h-7 w-9 rounded border border-[#dcd4c5] cursor-pointer bg-white p-0.5"
+                          />
+                          <input
+                            type="text"
+                            value={String(
+                              parsedEditorObj.bgColor || "#fdfbf7"
+                            )}
+                            onChange={(e) =>
+                              updateNestedFields({ bgColor: e.target.value })
+                            }
+                            placeholder="#fdfbf7"
+                            className="flex-1 px-2.5 py-1 text-xs font-mono bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
+                          />
+                        </div>
+
+                        <div className="flex items-center justify-between gap-2 pt-1">
+                          <span className="text-[10px] font-semibold text-[#4a4238]">
+                            Background Image
+                          </span>
+                          <div className="flex items-center gap-1">
+                            {Boolean(parsedEditorObj.bgImage) && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  updateNestedFields({ bgImage: "" })
+                                }
+                                className="px-2 py-1 rounded bg-red-50 text-red-700 text-[10px] font-bold hover:bg-red-100"
+                              >
+                                Clear
+                              </button>
+                            )}
+                            <label className="inline-flex items-center gap-1 px-2 py-1 rounded bg-[#1a1714] hover:bg-[#8c6d48] text-white text-[10px] font-bold cursor-pointer">
+                              <Upload className="w-3 h-3" />
+                              {uploadingImage ? "..." : "Upload"}
+                              <input
+                                type="file"
+                                accept="image/*"
+                                disabled={uploadingImage}
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) handleSectionBgUpload(file);
+                                  e.target.value = "";
+                                }}
+                                className="hidden"
+                              />
+                            </label>
+                          </div>
+                        </div>
+
+                        {mediaList.length > 0 && (
+                          <select
+                            value={
+                              mediaList.some(
+                                (m) => m.url === parsedEditorObj.bgImage
+                              )
+                                ? String(parsedEditorObj.bgImage)
+                                : ""
+                            }
+                            onChange={(e) =>
+                              updateNestedFields({ bgImage: e.target.value })
+                            }
+                            className="w-full px-2 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
+                          >
+                            <option value="">
+                              -- Pick background from Files --
+                            </option>
+                            {mediaList.map((m) => (
+                              <option key={m.id} value={m.url}>
+                                {m.fileName}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+
+                        <input
+                          type="text"
+                          value={String(parsedEditorObj.bgImage ?? "")}
+                          onChange={(e) =>
+                            updateNestedFields({ bgImage: e.target.value })
+                          }
+                          placeholder="Or paste background image URL..."
+                          className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
+                        />
+                      </div>
+
+                      {/* UNIVERSAL OVERLAY COLOR (ON/OFF + OPACITY %) */}
+                      <div className="space-y-2 pt-2 border-t border-[#f0ece3]">
+                        <div className="flex items-center justify-between">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-[#8c6d48]">
+                            Overlay Color
+                          </p>
+                          <label className="inline-flex items-center gap-1.5 text-[11px] font-semibold cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(
+                                parsedEditorObj.overlayEnabled ?? false
+                              )}
+                              onChange={(e) =>
+                                updateNestedFields({
+                                  overlayEnabled: e.target.checked,
+                                })
+                              }
+                              className="accent-[#8c6d48]"
+                            />
+                            {parsedEditorObj.overlayEnabled ? "ON" : "OFF"}
+                          </label>
+                        </div>
+
+                        {Boolean(parsedEditorObj.overlayEnabled) && (
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="color"
+                                value={String(
+                                  parsedEditorObj.overlayColor || "#000000"
+                                )}
+                                onChange={(e) =>
+                                  updateNestedFields({
+                                    overlayColor: e.target.value,
+                                  })
+                                }
+                                className="h-7 w-9 rounded border border-[#dcd4c5] cursor-pointer bg-white p-0.5"
+                              />
+                              <input
+                                type="text"
+                                value={String(
+                                  parsedEditorObj.overlayColor || "#000000"
+                                )}
+                                onChange={(e) =>
+                                  updateNestedFields({
+                                    overlayColor: e.target.value,
+                                  })
+                                }
+                                className="flex-1 px-2.5 py-1 text-xs font-mono bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-[10px] text-[#6b6256] mb-0.5">
+                                Overlay Opacity (
+                                {Number(parsedEditorObj.overlayOpacity ?? 40)}
+                                %)
+                              </label>
+                              <input
+                                type="range"
+                                min={0}
+                                max={100}
+                                value={Number(
+                                  parsedEditorObj.overlayOpacity ?? 40
+                                )}
+                                onChange={(e) =>
+                                  updateNestedFields({
+                                    overlayOpacity: Number(e.target.value),
+                                  })
+                                }
+                                className="w-full accent-[#8c6d48]"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* FEATURED PRODUCT EXTRA SETTINGS */}
+                      {isFeaturedProduct && (
+                        <div className="space-y-3 pt-2 border-t border-[#f0ece3]">
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase tracking-wider text-[#8c6d48] mb-1">
+                              Select Product (Database)
+                            </label>
+                            <select
+                              value={String(parsedEditorObj.productId ?? "")}
+                              onChange={(e) => {
+                                const picked = products.find(
+                                  (p) => String(p.id) === e.target.value
+                                );
+                                if (!picked) {
+                                  updateNestedFields({
+                                    productId: "",
+                                    productSnapshot: null,
+                                  });
+                                  return;
+                                }
+                                updateNestedFields({
+                                  productId: picked.id,
+                                  productSnapshot: {
+                                    id: picked.id,
+                                    sku: picked.sku,
+                                    name: picked.name,
+                                    brand: picked.brand,
+                                    boxInfo: picked.boxInfo,
+                                    origin: picked.origin,
+                                    shape: picked.shape,
+                                    description: picked.description,
+                                    image: picked.image,
+                                  },
+                                });
+                              }}
+                              className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
+                            >
+                              <option value="">
+                                -- Choose product from database --
+                              </option>
+                              {products.map((p) => (
+                                <option key={p.id} value={p.id}>
+                                  {p.name} ({p.sku})
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div className="space-y-2 pt-2 border-t border-[#f0ece3]">
+                            <div className="flex items-center justify-between">
+                              <p className="text-[10px] font-bold uppercase tracking-wider text-[#8c6d48]">
+                                Images (Optional)
+                              </p>
+                              <label className="inline-flex items-center gap-1 px-2 py-1 rounded bg-[#1a1714] hover:bg-[#8c6d48] text-white text-[10px] font-bold cursor-pointer">
+                                <Upload className="w-3 h-3" />
+                                {uploadingImage ? "..." : "Upload"}
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  disabled={uploadingImage}
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file) handleSectionImageUpload(file);
+                                    e.target.value = "";
+                                  }}
+                                  className="hidden"
+                                />
+                              </label>
+                            </div>
+
+                            {mediaList.length > 0 && (
+                              <select
+                                value=""
+                                onChange={(e) => {
+                                  if (!e.target.value) return;
+                                  const current = Array.isArray(
+                                    parsedEditorObj.images
+                                  )
+                                    ? (parsedEditorObj.images as string[])
+                                    : [];
+                                  updateNestedFields({
+                                    images: [...current, e.target.value],
+                                  });
+                                }}
+                                className="w-full px-2 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
+                              >
+                                <option value="">
+                                  + Pick from Files library...
+                                </option>
+                                {mediaList.map((m) => (
+                                  <option key={m.id} value={m.url}>
+                                    {m.fileName}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+
+                            {Array.isArray(parsedEditorObj.images) &&
+                              (parsedEditorObj.images as string[]).length >
+                                0 && (
+                                <div className="grid grid-cols-3 gap-1.5">
+                                  {(parsedEditorObj.images as string[]).map(
+                                    (imgUrl, idx) => (
+                                      <div
+                                        key={`${imgUrl}-${idx}`}
+                                        className="relative aspect-square rounded border border-[#dcd4c5] overflow-hidden bg-[#fdfbf7]"
+                                      >
+                                        <img
+                                          src={imgUrl}
+                                          alt={`Slide ${idx + 1}`}
+                                          className="w-full h-full object-cover"
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const next = (
+                                              parsedEditorObj.images as string[]
+                                            ).filter((_, i) => i !== idx);
+                                            updateNestedFields({
+                                              images: next,
+                                            });
+                                          }}
+                                          className="absolute top-0.5 right-0.5 p-0.5 rounded bg-black/70 text-white hover:bg-red-600"
+                                          title="Remove image"
+                                        >
+                                          <X className="w-3 h-3" />
+                                        </button>
+                                      </div>
+                                    )
+                                  )}
+                                </div>
+                              )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* BEST SELLERS EXTRA SETTINGS */}
+                      {isBestSellers && (
+                        <div className="space-y-3 pt-2 border-t border-[#f0ece3]">
+                          <div className="space-y-2">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-[#8c6d48]">
+                              Card Style
+                            </p>
+                            <div>
+                              <label className="block text-[10px] text-[#6b6256] mb-0.5">
+                                Round Corner (
+                                {Number(parsedEditorObj.cardRadius ?? 12)}px)
+                              </label>
+                              <input
+                                type="range"
+                                min={0}
+                                max={32}
+                                value={Number(parsedEditorObj.cardRadius ?? 12)}
+                                onChange={(e) =>
+                                  updateNestedFields({
+                                    cardRadius: Number(e.target.value),
+                                  })
+                                }
+                                className="w-full accent-[#8c6d48]"
+                              />
+                            </div>
+
+                            <div className="flex items-center justify-between gap-2">
+                              <label className="inline-flex items-center gap-1.5 text-[11px] font-semibold cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(
+                                    parsedEditorObj.cardBorder ?? true
+                                  )}
+                                  onChange={(e) =>
+                                    updateNestedFields({
+                                      cardBorder: e.target.checked,
+                                    })
+                                  }
+                                  className="accent-[#8c6d48]"
+                                />
+                                Border
+                              </label>
+                              {Boolean(parsedEditorObj.cardBorder ?? true) && (
+                                <input
+                                  type="color"
+                                  value={String(
+                                    parsedEditorObj.cardBorderColor || "#e5dfd3"
+                                  )}
+                                  onChange={(e) =>
+                                    updateNestedFields({
+                                      cardBorderColor: e.target.value,
+                                    })
+                                  }
+                                  className="h-6 w-8 rounded border border-[#dcd4c5] cursor-pointer bg-white p-0.5"
+                                />
+                              )}
+                            </div>
+
+                            <div>
+                              <label className="block text-[10px] text-[#6b6256] mb-0.5">
+                                Shadow
+                              </label>
+                              <select
+                                value={String(
+                                  parsedEditorObj.cardShadow ?? "sm"
+                                )}
+                                onChange={(e) =>
+                                  updateNestedFields({
+                                    cardShadow: e.target.value,
+                                  })
+                                }
+                                className="w-full px-2 py-1 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
+                              >
+                                <option value="none">None</option>
+                                <option value="sm">Small</option>
+                                <option value="md">Medium</option>
+                                <option value="lg">Large</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="space-y-2 pt-2 border-t border-[#f0ece3]">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-[#8c6d48]">
+                              Card Products (Database)
+                            </p>
+                            {[0, 1, 2, 3].map((slotIdx) => {
+                              const currentCards: Array<Record<
+                                string,
+                                unknown
+                              > | null> = Array.isArray(parsedEditorObj.cards)
+                                ? (parsedEditorObj.cards as Array<Record<
+                                    string,
+                                    unknown
+                                  > | null>)
+                                : [];
+                              const currentSlot = currentCards[slotIdx] ?? null;
+
+                              return (
+                                <div key={slotIdx}>
+                                  <label className="block text-[10px] font-semibold text-[#4a4238] mb-0.5">
+                                    Card {slotIdx + 1} Product
+                                  </label>
+                                  <select
+                                    value={String(currentSlot?.id ?? "")}
+                                    onChange={(e) => {
+                                      const nextCards: Array<Record<
+                                        string,
+                                        unknown
+                                      > | null> = [0, 1, 2, 3].map(
+                                        (i) => currentCards[i] ?? null
+                                      );
+                                      const picked = products.find(
+                                        (p) => String(p.id) === e.target.value
+                                      );
+                                      nextCards[slotIdx] = picked
+                                        ? {
+                                            id: picked.id,
+                                            sku: picked.sku,
+                                            name: picked.name,
+                                            brand: picked.brand,
+                                            boxInfo: picked.boxInfo,
+                                            origin: picked.origin,
+                                            shape: picked.shape,
+                                            image: picked.image,
+                                            category:
+                                              picked.category?.name ?? "",
+                                          }
+                                        : null;
+                                      updateNestedFields({ cards: nextCards });
+                                    }}
+                                    className="w-full px-2 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
+                                  >
+                                    <option value="">
+                                      -- Default / Empty --
+                                    </option>
+                                    {products.map((p) => (
+                                      <option key={p.id} value={p.id}>
+                                        {p.name} ({p.sku})
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* EDITORIAL CATEGORIES EXTRA SETTINGS */}
+                      {selectedSection.type === "EDITORIAL_CATEGORIES" && (
+                        <div className="space-y-2 pt-2 border-t border-[#f0ece3]">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-[#8c6d48]">
+                            Visibility Access
+                          </p>
+                          <label className="flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg bg-[#fdfbf7] border border-[#dcd4c5] text-xs font-semibold text-[#1a1714] cursor-pointer">
+                            <span>Only visible for customer</span>
+                            <input
+                              type="checkbox"
+                              checked={Boolean(parsedEditorObj.onlyVisibleForCustomer ?? false)}
+                              onChange={(e) =>
+                                updateNestedFields({
+                                  onlyVisibleForCustomer: e.target.checked,
+                                })
+                              }
+                              className="accent-[#8c6d48]"
+                            />
+                          </label>
+                          <p className="text-[10px] text-[#6b6256]">
+                            Jika aktif, section hanya tampil untuk customer yang sudah login.
+                          </p>
+                        </div>
+                      )}
 
                       {parsedEditorObj && (
                         <div className="space-y-2 pt-2 border-t border-[#f0ece3]">
@@ -1536,7 +2211,6 @@ export default function AdminDashboardClient({
               </div>
             </div>
           ) : activeTab === "orders" ? (
-            /* ORDERS TAB */
             <div className="max-w-6xl mx-auto space-y-6">
               <div className="bg-white border border-[#e0dbd0] rounded-xl overflow-hidden shadow-xs">
                 <div className="px-5 py-4 border-b border-[#ece8df] flex items-center justify-between">
@@ -1790,7 +2464,6 @@ export default function AdminDashboardClient({
               </div>
             </div>
           ) : activeTab === "collections" ? (
-            /* COLLECTIONS TAB */
             <div className="max-w-6xl mx-auto space-y-5">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="relative w-full sm:w-80">
@@ -1878,7 +2551,6 @@ export default function AdminDashboardClient({
               </div>
             </div>
           ) : activeTab === "files" ? (
-            /* FILES LIBRARY TAB */
             <div className="max-w-6xl mx-auto space-y-6">
               <div className="bg-white border border-[#e0dbd0] rounded-xl p-5 shadow-xs flex flex-wrap items-center justify-between gap-4">
                 <div>
@@ -1969,7 +2641,6 @@ export default function AdminDashboardClient({
               </div>
             </div>
           ) : (
-            /* PRODUCTS TAB */
             <div className="max-w-6xl mx-auto space-y-6">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="relative w-full sm:w-80">

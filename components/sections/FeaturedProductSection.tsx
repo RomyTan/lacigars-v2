@@ -1,187 +1,236 @@
 "use client";
 
-import { useState } from "react";
-import { Lock, Minus, Plus, Check, ArrowRight } from "lucide-react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { EXTENDED_CATALOG } from "@/lib/storefront-data";
-import { useStorefront } from "@/components/StorefrontShell";
+import { Lock } from "lucide-react";
 
-export function FeaturedProductSection() {
-  const { partnerState, openDrawer, addToCart } = useStorefront();
-  const product =
-    EXTENDED_CATALOG.find((p) => p.isFeatured) ?? EXTENDED_CATALOG[0];
-  const images =
-    product.gallery && product.gallery.length > 0
-      ? product.gallery
-      : [product.image];
+interface ProductSnapshot {
+  id?: number;
+  sku?: string;
+  name?: string;
+  brand?: string | null;
+  boxInfo?: string | null;
+  origin?: string | null;
+  shape?: string | null;
+  description?: string | null;
+  image?: string | null;
+}
 
-  const [selectedImage, setSelectedImage] = useState(images[0]);
-  const [qty, setQty] = useState(1);
+interface FeaturedProductContent {
+  badge?: string;
+  heading?: string;
+  headingSize?: number;
+  headingStyle?: "regular" | "bold" | "italic" | "bold-italic" | string;
+  showDivider?: boolean;
+  dividerWidth?: number;
+  images?: string[];
+  bgColor?: string;
+  bgImage?: string;
+  overlayEnabled?: boolean;
+  overlayColor?: string;
+  overlayOpacity?: number;
+  productSnapshot?: ProductSnapshot | null;
+}
+
+export function FeaturedProductSection({
+  content,
+}: {
+  content?: Record<string, unknown>;
+}) {
+  const cfg = (content ?? {}) as FeaturedProductContent;
+  const prod = cfg.productSnapshot;
+
+  const gallery =
+    Array.isArray(cfg.images) && cfg.images.length > 0
+      ? cfg.images.filter((u): u is string => typeof u === "string" && u.trim() !== "")
+      : prod?.image
+      ? [prod.image]
+      : [];
+
+  const [activeIdx, setActiveIdx] = useState(0);
+
+  useEffect(() => {
+    if (activeIdx >= gallery.length) {
+      setActiveIdx(0);
+    }
+  }, [gallery.length, activeIdx]);
+
+  const activeImage = gallery[activeIdx] ?? gallery[0] ?? null;
+
+  const headingStyleClass =
+    cfg.headingStyle === "regular"
+      ? "font-normal not-italic"
+      : cfg.headingStyle === "italic"
+      ? "font-normal italic"
+      : cfg.headingStyle === "bold-italic"
+      ? "font-bold italic"
+      : "font-bold not-italic";
+
+  const bgColor = cfg.bgColor?.trim() || "#fdfbf7";
+  const bgImage = cfg.bgImage?.trim() || "";
+  const overlayEnabled = Boolean(cfg.overlayEnabled);
+  const overlayColor = cfg.overlayColor?.trim() || "#000000";
+  const overlayOpacity = Math.min(
+    100,
+    Math.max(0, Number(cfg.overlayOpacity ?? 40))
+  );
 
   return (
-    <section className="relative z-10 bg-white py-20 md:py-28 border-b border-[#e6e2d8]">
-      <div className="max-w-7xl mx-auto px-6 md:px-8">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-14 items-start">
-          {/* Left: Vertical Thumbnails + Stage */}
-          <div className="lg:col-span-7 flex flex-col-reverse sm:flex-row gap-4">
-            <div className="flex sm:flex-col gap-3 overflow-x-auto sm:overflow-visible">
-              {images.map((img, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  onClick={() => setSelectedImage(img)}
-                  className={`w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden border-2 flex-shrink-0 transition-all ${
-                    selectedImage === img
-                      ? "border-[#1a1714]"
-                      : "border-[#e6e2d8] opacity-70 hover:opacity-100"
-                  }`}
-                >
-                  <img
-                    src={img}
-                    alt={`${product.name} view ${i + 1}`}
-                    className="w-full h-full object-cover"
-                  />
-                </button>
-              ))}
-            </div>
+    <section
+      className="relative z-10 py-16 px-6 md:px-10 text-[#1a1714] overflow-hidden bg-cover bg-center"
+      style={{
+        backgroundColor: bgColor,
+        ...(bgImage ? { backgroundImage: `url('${bgImage}')` } : {}),
+      }}
+    >
+      {/* Optional Color Overlay */}
+      {overlayEnabled && (
+        <div
+          className="absolute inset-0 pointer-events-none z-0"
+          style={{
+            backgroundColor: overlayColor,
+            opacity: overlayOpacity / 100,
+          }}
+        />
+      )}
 
-            <div className="relative flex-1 aspect-[4/3] sm:aspect-square bg-[#fdfbf7] border border-[#e6e2d8] rounded-2xl overflow-hidden">
-              <img
-                src={selectedImage}
-                alt={product.name}
-                className="w-full h-full object-cover"
-              />
-              <span className="absolute top-4 left-4 px-3 py-1.5 rounded-full bg-[#1a1714] text-[#F8B93C] text-[10px] font-bold uppercase tracking-[0.2em]">
-                Featured Wholesale Pick
-              </span>
-            </div>
-          </div>
-
-          {/* Right: Details & B2B Action */}
-          <div className="lg:col-span-5 space-y-6">
-            <div>
-              <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-[#8c6d48] mb-2">
-                {product.brand} · SKU {product.sku}
-              </p>
-              <div className="flex items-start justify-between gap-4">
-                <h2 className="text-3xl md:text-4xl font-serif font-bold text-[#1a1714] leading-tight">
-                  {product.name}
-                </h2>
-                {partnerState === "APPROVED_PARTNER" && (
-                  <span className="text-2xl font-bold text-[#1a1714] flex-shrink-0">
-                    ${product.wholesalePrice.toFixed(2)}
-                  </span>
-                )}
-              </div>
-              <p className="text-xs font-semibold text-[#6b6256] mt-2">
-                Selling Unit: {product.packSize}
-              </p>
-            </div>
-
-            <p className="text-sm text-[#574f45] leading-relaxed">
-              {product.description}
-            </p>
-
-            {/* B2B Gatekeeping Action Box */}
-            <div className="pt-2 space-y-3">
-              {partnerState === "APPROVED_PARTNER" ? (
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center border border-[#dcd4c5] rounded-full px-2 py-1.5 bg-[#fdfbf7]">
-                    <button
-                      type="button"
-                      onClick={() => setQty((q) => Math.max(1, q - 1))}
-                      className="p-1.5 text-[#2b2621] hover:text-[#8c6d48]"
-                    >
-                      <Minus className="w-3.5 h-3.5" />
-                    </button>
-                    <span className="w-8 text-center text-sm font-bold text-[#1a1714]">
-                      {qty}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setQty((q) => q + 1)}
-                      className="p-1.5 text-[#2b2621] hover:text-[#8c6d48]"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => addToCart(product, qty)}
-                    className="flex-1 py-3.5 px-6 rounded-full bg-[#1a1714] hover:bg-[#8c6d48] text-white text-xs font-bold uppercase tracking-[0.18em] transition-colors"
-                  >
-                    Add to Order — ${(product.wholesalePrice * qty).toFixed(2)}
-                  </button>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => openDrawer("account")}
-                  className="w-full py-3.5 px-6 rounded-full bg-[#1a1714] hover:bg-[#F8B93C] text-white hover:text-[#1a1714] text-xs font-bold uppercase tracking-[0.18em] flex items-center justify-center gap-2.5 transition-colors"
-                >
-                  <Lock className="w-3.5 h-3.5" />
-                  Login for Wholesale Price
-                </button>
-              )}
-
-              <div className="flex items-center gap-2 text-xs text-[#6b6256] pt-1">
-                <Check className="w-4 h-4 text-[#8c6d48]" />
-                <span>In stock at Florida Operations Hub — ships in 24-48h</span>
-              </div>
-            </div>
-
-            {/* Product Highlights Grid */}
-            {product.specs && (
-              <div className="pt-6 border-t border-[#e6e2d8]">
-                <h3 className="text-xs font-bold uppercase tracking-[0.18em] text-[#1a1714] mb-4">
-                  Product Highlights
-                </h3>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="p-3.5 rounded-xl bg-[#fdfbf7] border border-[#eae5db]">
-                    <p className="text-[10px] uppercase tracking-wider text-[#8c6d48] font-bold">
-                      Origin
-                    </p>
-                    <p className="text-xs font-bold text-[#1a1714] mt-0.5">
-                      {product.specs.origin}
-                    </p>
-                  </div>
-                  <div className="p-3.5 rounded-xl bg-[#fdfbf7] border border-[#eae5db]">
-                    <p className="text-[10px] uppercase tracking-wider text-[#8c6d48] font-bold">
-                      Wrapper
-                    </p>
-                    <p className="text-xs font-bold text-[#1a1714] mt-0.5">
-                      {product.specs.wrapper}
-                    </p>
-                  </div>
-                  <div className="p-3.5 rounded-xl bg-[#fdfbf7] border border-[#eae5db]">
-                    <p className="text-[10px] uppercase tracking-wider text-[#8c6d48] font-bold">
-                      Vitola
-                    </p>
-                    <p className="text-xs font-bold text-[#1a1714] mt-0.5">
-                      {product.specs.vitola}
-                    </p>
-                  </div>
-                  <div className="p-3.5 rounded-xl bg-[#fdfbf7] border border-[#eae5db]">
-                    <p className="text-[10px] uppercase tracking-wider text-[#8c6d48] font-bold">
-                      Strength
-                    </p>
-                    <p className="text-xs font-bold text-[#1a1714] mt-0.5">
-                      {product.specs.strength}
-                    </p>
-                  </div>
-                </div>
+      <div className="relative z-10 max-w-6xl mx-auto">
+        {cfg.heading && (
+          <div className="mb-8 text-center">
+            <h2
+              style={{ fontSize: `${cfg.headingSize ?? 32}px` }}
+              className={`font-serif text-[#1a1714] leading-tight ${headingStyleClass}`}
+            >
+              {cfg.heading}
+            </h2>
+            {cfg.showDivider && (
+              <div className="mt-4 flex justify-center">
+                <div
+                  style={{ width: `${cfg.dividerWidth ?? 100}%` }}
+                  className="h-px bg-[#d6cfc2]"
+                />
               </div>
             )}
+          </div>
+        )}
 
-            <div className="pt-2">
-              <Link
-                href="/products"
-                className="inline-flex items-center gap-2 text-xs font-bold text-[#1a1714] hover:text-[#8c6d48] transition-colors"
-              >
-                View full catalog specifications
-                <ArrowRight className="w-3.5 h-3.5" />
-              </Link>
+        {!cfg.heading && cfg.showDivider && (
+          <div className="mb-8 flex justify-center">
+            <div
+              style={{ width: `${cfg.dividerWidth ?? 100}%` }}
+              className="h-px bg-[#d6cfc2]"
+            />
+          </div>
+        )}
+
+        <div
+          className={`grid grid-cols-1 ${
+            gallery.length > 0 ? "lg:grid-cols-12" : ""
+          } gap-8 items-start`}
+        >
+          {/* Optional Image Gallery */}
+          {gallery.length > 0 && (
+            <div className="lg:col-span-6 flex gap-3">
+              {gallery.length > 1 && (
+                <div className="relative z-20 flex flex-col gap-2 w-16 shrink-0">
+                  {gallery.map((url, idx) => (
+                    <button
+                      key={`${url}-${idx}`}
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveIdx(idx);
+                      }}
+                      className={`cursor-pointer aspect-square rounded-lg overflow-hidden border bg-white transition-all ${
+                        idx === activeIdx
+                          ? "border-[#1a1714] ring-2 ring-[#1a1714]"
+                          : "border-[#e5dfd3] opacity-75 hover:opacity-100"
+                      }`}
+                    >
+                      <img
+                        src={url}
+                        alt={prod?.name || `Thumbnail ${idx + 1}`}
+                        className="w-full h-full object-cover pointer-events-none"
+                      />
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <div className="relative flex-1 aspect-square rounded-2xl overflow-hidden border border-[#e5dfd3] bg-white">
+                {cfg.badge && (
+                  <span className="absolute top-3 left-3 z-10 px-3 py-1 rounded-full bg-[#1a1714] text-[#F8B93C] text-[10px] font-bold uppercase tracking-wider">
+                    {cfg.badge}
+                  </span>
+                )}
+                {activeImage && (
+                  <img
+                    key={activeImage}
+                    src={activeImage}
+                    alt={prod?.name || "Featured product"}
+                    className="w-full h-full object-cover"
+                  />
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Product Details */}
+          <div
+            className={
+              gallery.length > 0
+                ? "lg:col-span-6 space-y-4"
+                : "max-w-2xl mx-auto space-y-4"
+            }
+          >
+            {gallery.length === 0 && cfg.badge && (
+              <span className="inline-block px-3 py-1 rounded-full bg-[#1a1714] text-[#F8B93C] text-[10px] font-bold uppercase tracking-wider">
+                {cfg.badge}
+              </span>
+            )}
+
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#8c6d48]">
+              {prod?.brand || "EL BACÁN"} · SKU {prod?.sku || "LAC-ELB-001"}
+            </p>
+
+            <h3 className="text-3xl font-sans font-bold tracking-tight text-[#1a1714]">
+              {prod?.name || "El Bacán Reserve Robusto"}
+            </h3>
+
+            <p className="text-xs text-[#6b6256]">
+              Selling Unit: {prod?.boxInfo || "Box of 20"}
+            </p>
+
+            <p className="text-sm text-[#4a4238] leading-relaxed">
+              {prod?.description ||
+                "Rich Nicaraguan long-filler blend wrapped in an oily Habano leaf. Engineered for consistent draw, clean burn, and high repeat velocity across Florida retail humidors."}
+            </p>
+
+            <Link
+              href="/wholesale"
+              className="w-full inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-full bg-[#1a1714] hover:bg-[#8c6d48] text-white text-xs font-bold tracking-wider uppercase transition-colors"
+            >
+              <Lock className="w-3.5 h-3.5" />
+              Login for Wholesale Price
+            </Link>
+
+            <div className="grid grid-cols-2 gap-3 pt-2">
+              <div className="p-3 rounded-xl border border-[#e5dfd3] bg-white/95">
+                <p className="text-[9px] uppercase tracking-wider text-[#8c6d48] font-bold">
+                  Origin
+                </p>
+                <p className="text-xs font-bold text-[#1a1714] mt-0.5">
+                  {prod?.origin || "Nicaragua"}
+                </p>
+              </div>
+              <div className="p-3 rounded-xl border border-[#e5dfd3] bg-white/95">
+                <p className="text-[9px] uppercase tracking-wider text-[#8c6d48] font-bold">
+                  Vitola
+                </p>
+                <p className="text-xs font-bold text-[#1a1714] mt-0.5">
+                  {prod?.shape || "Robusto 5x52"}
+                </p>
+              </div>
             </div>
           </div>
         </div>

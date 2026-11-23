@@ -1,18 +1,16 @@
 import type { Metadata } from "next";
-import { Plus_Jakarta_Sans, Playfair_Display } from "next/font/google";
+import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { StorefrontShell } from "@/components/StorefrontShell";
 
-const sansFont = Plus_Jakarta_Sans({
+const geistSans = Geist({
+  variable: "--font-geist-sans",
   subsets: ["latin"],
-  variable: "--font-sans",
-  weight: ["400", "500", "600", "700"],
 });
 
-const serifFont = Playfair_Display({
+const geistMono = Geist_Mono({
+  variable: "--font-geist-mono",
   subsets: ["latin"],
-  variable: "--font-serif",
-  weight: ["600", "700"],
 });
 
 export const metadata: Metadata = {
@@ -27,7 +25,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${sansFont.variable} ${serifFont.variable}`}>
+    <html
+      lang="en"
+      className={`${geistSans.variable} ${geistMono.variable}`}
+    >
       <body className="font-sans bg-[#fdfbf7] text-[#2b2621] antialiased selection:bg-[#F8B93C] selection:text-[#1a1714]">
         <StorefrontShell>{children}</StorefrontShell>
       </body>
