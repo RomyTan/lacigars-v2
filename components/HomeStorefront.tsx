@@ -84,6 +84,75 @@ function renderSectionShell(
   );
 }
 
+function PartnerSection({ content }: { content?: Record<string, unknown> }) {
+  const c = content ?? {};
+  const eyebrow =
+    typeof c.eyebrow === "string" && c.eyebrow.trim()
+      ? c.eyebrow.trim()
+      : "PARTNER WITH US";
+  const heading =
+    typeof c.heading === "string" && c.heading.trim()
+      ? c.heading.trim()
+      : "Ready to Elevate Your Retail Business?";
+  const subtext =
+    typeof c.subtext === "string" && c.subtext.trim()
+      ? c.subtext.trim()
+      : "Get in touch for wholesale inquiries, catalog access, or to learn more about our distribution capabilities across Florida.";
+  const primaryLabel =
+    typeof c.primaryLabel === "string" && c.primaryLabel.trim()
+      ? c.primaryLabel.trim()
+      : "CONTACT SALES";
+  const primaryHref =
+    typeof c.primaryHref === "string" && c.primaryHref.trim()
+      ? c.primaryHref.trim()
+      : "/contact";
+  const secondaryLabel =
+    typeof c.secondaryLabel === "string" && c.secondaryLabel.trim()
+      ? c.secondaryLabel.trim()
+      : "PARTNER LOGIN";
+  const secondaryHref =
+    typeof c.secondaryHref === "string" && c.secondaryHref.trim()
+      ? c.secondaryHref.trim()
+      : "/wholesale";
+  const textColor =
+    typeof c.textColor === "string" && c.textColor.trim()
+      ? c.textColor.trim()
+      : undefined;
+
+  return (
+    <section className="py-16 px-6 md:px-10">
+      <div className="max-w-4xl mx-auto bg-white rounded-2xl border border-[#e6e0d4] shadow-sm px-6 py-12 md:px-12 text-center">
+        <p className="text-[10px] font-bold tracking-[0.25em] uppercase text-[#8c6d48] mb-3">
+          — {eyebrow}
+        </p>
+        <h2
+          style={textColor ? { color: textColor } : undefined}
+          className="text-3xl md:text-5xl font-serif font-bold text-[#1a1714] leading-tight mb-4"
+        >
+          {heading}
+        </h2>
+        <p className="text-xs md:text-sm text-[#6b6256] max-w-xl mx-auto leading-relaxed mb-8">
+          {subtext}
+        </p>
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          <Link
+            href={primaryHref}
+            className="px-6 py-3 rounded-md bg-[#8c6d48] hover:bg-[#735838] text-white text-[10px] font-bold tracking-[0.18em] uppercase transition-colors"
+          >
+            {primaryLabel}
+          </Link>
+          <Link
+            href={secondaryHref}
+            className="px-6 py-3 rounded-md border border-[#d6cfc2] hover:border-[#1a1714] text-[#1a1714] text-[10px] font-bold tracking-[0.18em] uppercase transition-colors"
+          >
+            {secondaryLabel}
+          </Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function HomeStorefront({
   sections: initialSections,
   brands,
@@ -440,6 +509,15 @@ export function HomeStorefront({
                     }
                   }
                 />
+              )
+            );
+
+          case "PARTNER_SECTION":
+          case "PARTNER_CTA":
+            return wrapSection(
+              renderSectionShell(
+                section.content,
+                <PartnerSection content={section.content} />
               )
             );
 

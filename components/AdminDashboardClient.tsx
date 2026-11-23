@@ -960,9 +960,9 @@ export default function AdminDashboardClient({
         </div>
       )}
 
-      <div className="flex-1 flex flex-col md:flex-row">
+      <div className="flex-1 flex flex-col md:flex-row md:h-[calc(100vh-3.5rem)] md:overflow-hidden">
         {/* Left Navigation Sidebar */}
-        <aside className="w-full md:w-68 bg-[#ebe8e1] border-b md:border-b-0 md:border-r border-[#dcd7cc] p-4 space-y-2 shrink-0">
+        <aside className="w-full md:w-68 bg-[#ebe8e1] border-b md:border-b-0 md:border-r border-[#dcd7cc] p-4 space-y-2 shrink-0 md:h-full md:overflow-y-auto">
           <p className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-[#6b6256]">
             Theme Editor
           </p>
@@ -1203,15 +1203,15 @@ export default function AdminDashboardClient({
         </aside>
 
         {/* Main Workspace */}
-        <main className="flex-1 min-w-0 p-4 md:p-5 overflow-y-auto">
+        <main className="flex-1 min-w-0 p-4 md:p-5 md:h-full md:overflow-hidden flex flex-col">
           {loading ? (
             <div className="py-20 text-center text-xs text-[#6b6256]">
               Loading CMS data...
             </div>
           ) : activeTab === "sections" ? (
-            <div className="w-full flex flex-col lg:flex-row gap-4 items-start">
-              {/* Center Column: Wider Live Preview */}
-              <div className="flex-1 min-w-0 w-full bg-white border border-[#e0dbd0] rounded-xl overflow-hidden shadow-xs">
+            <div className="w-full flex-1 min-h-0 flex flex-col lg:flex-row gap-4 items-stretch">
+              {/* Center Column: Stay Full Height */}
+              <div className="flex-1 min-w-0 w-full bg-white border border-[#e0dbd0] rounded-xl overflow-hidden shadow-xs flex flex-col min-h-[540px] lg:min-h-0">
                 <div className="px-4 py-3 bg-[#faf8f4] border-b border-[#ece8df] flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <p className="text-[10px] font-bold uppercase tracking-wider text-[#8c6d48]">
@@ -1296,9 +1296,9 @@ export default function AdminDashboardClient({
                   </div>
                 </div>
 
-                <div className="p-3 bg-[#e4dfd5] flex justify-center">
+                <div className="p-3 bg-[#e4dfd5] flex-1 min-h-0 flex justify-center">
                   <div
-                    className={`w-full bg-white border border-[#cfc6b6] rounded-xl overflow-hidden shadow-md transition-all ${
+                    className={`w-full h-full bg-white border border-[#cfc6b6] rounded-xl overflow-hidden shadow-md transition-all ${
                       previewViewport === "mobile"
                         ? "max-w-[390px]"
                         : "max-w-full"
@@ -1309,14 +1309,14 @@ export default function AdminDashboardClient({
                       src="/?cmsPreview=1"
                       title="Storefront Theme Preview"
                       onLoad={() => postPreviewPayload()}
-                      className="w-full h-[780px] border-0 block bg-white"
+                      className="w-full h-full border-0 block bg-white"
                     />
                   </div>
                 </div>
               </div>
 
-              {/* Right Column: Same Width as Left Sidebar */}
-              <div className="w-full lg:w-68 shrink-0 bg-white border border-[#e0dbd0] rounded-xl overflow-hidden shadow-xs">
+              {/* Right Column: Scrollable Settings */}
+              <div className="w-full lg:w-68 shrink-0 bg-white border border-[#e0dbd0] rounded-xl overflow-hidden shadow-xs lg:h-full lg:overflow-y-auto">
                 {editorFocus === "header" ? (
                   <>
                     <div className="px-4 py-3.5 border-b border-[#ece8df]">
@@ -2210,7 +2210,9 @@ export default function AdminDashboardClient({
                 )}
               </div>
             </div>
-          ) : activeTab === "orders" ? (
+          ) : (
+            <div className="flex-1 min-h-0 overflow-y-auto">
+              {activeTab === "orders" ? (
             <div className="max-w-6xl mx-auto space-y-6">
               <div className="bg-white border border-[#e0dbd0] rounded-xl overflow-hidden shadow-xs">
                 <div className="px-5 py-4 border-b border-[#ece8df] flex items-center justify-between">
@@ -2782,6 +2784,8 @@ export default function AdminDashboardClient({
                   </div>
                 )}
               </div>
+            </div>
+              )}
             </div>
           )}
         </main>
