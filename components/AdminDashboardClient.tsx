@@ -895,7 +895,7 @@ export default function AdminDashboardClient({
   const isBestSellers = selectedSection?.type === "BEST_SELLERS";
 
   return (
-    <div className="relative z-100 min-h-screen bg-[#f4f3f0] text-[#1a1714] flex flex-col">
+    <div className="relative z-100 h-screen overflow-hidden bg-[#f4f3f0] text-[#1a1714] flex flex-col">
       <header className="h-14 bg-[#1a1714] text-[#fdfbf7] px-5 flex items-center justify-between border-b border-white/10 sticky top-0 z-20">
         <div className="flex items-center gap-3">
           <img
@@ -960,11 +960,11 @@ export default function AdminDashboardClient({
         </div>
       )}
 
-      <div className="flex-1 flex flex-col md:flex-row md:h-[calc(100vh-3.5rem)] md:overflow-hidden">
+      <div className="flex-1 min-h-0 flex flex-col md:flex-row overflow-hidden">
         {/* Left Navigation Sidebar */}
-        <aside className="w-full md:w-68 bg-[#ebe8e1] border-b md:border-b-0 md:border-r border-[#dcd7cc] p-4 space-y-2 shrink-0 md:h-full md:overflow-y-auto">
-          <p className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-[#6b6256]">
-            Theme Editor
+        <aside className="w-full md:w-68 bg-[#dedbd4] border-b md:border-b-0 md:border-r border-[#c8c3b8] p-4 space-y-2.5 shrink-0">
+          <p className="px-1 py-1 text-[11px] font-extrabold uppercase tracking-[0.06em] text-[#231f1c]">
+            THEME EDITOR
           </p>
 
           <button
@@ -973,14 +973,14 @@ export default function AdminDashboardClient({
               setActiveTab("sections");
               setEditorFocus("header");
             }}
-            className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition-colors ${
+            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-semibold transition-colors ${
               activeTab === "sections" && editorFocus === "header"
-                ? "bg-white text-[#1a1714] shadow-xs"
-                : "text-[#4a4238] hover:bg-white/60"
+                ? "bg-[#241307] text-[#fdfbf7]"
+                : "text-[#2c251f] hover:bg-[#d3cfc6]"
             }`}
           >
-            <span className="flex items-center gap-2">
-              <PanelTop className="w-4 h-4 text-[#8c6d48]" />
+            <span className="flex items-center gap-2.5">
+              <PanelTop className="w-4 h-4 text-[#3d2110]" />
               Header Group
             </span>
           </button>
@@ -991,26 +991,20 @@ export default function AdminDashboardClient({
               setActiveTab("sections");
               setEditorFocus("footer");
             }}
-            className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition-colors ${
+            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-semibold transition-colors ${
               activeTab === "sections" && editorFocus === "footer"
-                ? "bg-white text-[#1a1714] shadow-xs"
-                : "text-[#4a4238] hover:bg-white/60"
+                ? "bg-[#241307] text-[#fdfbf7]"
+                : "text-[#2c251f] hover:bg-[#d3cfc6]"
             }`}
           >
-            <span className="flex items-center gap-2">
-              <PanelBottom className="w-4 h-4 text-[#8c6d48]" />
+            <span className="flex items-center gap-2.5">
+              <PanelBottom className="w-4 h-4 text-[#3d2110]" />
               Footer Group
             </span>
           </button>
 
-          <div className="pt-0.5">
-            <div
-              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition-colors ${
-                activeTab === "sections" && editorFocus === "homepage"
-                  ? "bg-white text-[#1a1714] shadow-xs"
-                  : "text-[#4a4238] hover:bg-white/60"
-              }`}
-            >
+          <div className="pt-2.5 border-t border-[#c6c1b6]">
+            <div className="w-full flex items-center justify-between px-1 py-1 text-[11px] font-extrabold uppercase tracking-[0.06em] text-[#231f1c]">
               <button
                 type="button"
                 onClick={() => {
@@ -1018,29 +1012,28 @@ export default function AdminDashboardClient({
                   setEditorFocus("homepage");
                   setThemeSectionsOpen(true);
                 }}
-                className="flex items-center gap-2 flex-1 text-left"
+                className="flex-1 text-left"
               >
-                <Layers className="w-4 h-4 text-[#8c6d48]" />
-                <span>Theme Sections</span>
+                THEME SECTION
               </button>
               <button
                 type="button"
                 onClick={() => setThemeSectionsOpen((prev) => !prev)}
-                className="p-0.5 rounded hover:bg-[#f4f3f0] text-[#6b6256]"
+                className="p-0.5 rounded hover:bg-[#d3cfc6] text-[#3d2110]"
                 title={
                   themeSectionsOpen ? "Collapse sections" : "Expand sections"
                 }
               >
                 {themeSectionsOpen ? (
-                  <ChevronDown className="w-4 h-4" />
+                  <ChevronDown className="w-3.5 h-3.5" />
                 ) : (
-                  <ChevronRight className="w-4 h-4" />
+                  <ChevronRight className="w-3.5 h-3.5" />
                 )}
               </button>
             </div>
 
             {themeSectionsOpen && (
-              <div className="mt-1 ml-2 pl-2.5 border-l border-[#d3cdc0] space-y-1">
+              <div className="mt-2 space-y-2">
                 {sections.map((sec, idx) => {
                   const isCurrent =
                     activeTab === "sections" &&
@@ -1050,10 +1043,10 @@ export default function AdminDashboardClient({
                     <div
                       key={sec.id}
                       onClick={() => selectSection(sec, idx)}
-                      className={`group flex items-center justify-between gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] cursor-pointer transition-colors ${
+                      className={`group flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-lg text-xs cursor-pointer transition-colors border ${
                         isCurrent
-                          ? "bg-[#1a1714] text-[#fdfbf7] font-semibold"
-                          : "text-[#4a4238] hover:bg-white/70"
+                          ? "bg-[#241307] text-[#fdfbf7] border-[#241307] font-semibold"
+                          : "bg-[#e3e0d9] text-[#231f1c] border-[#c8c3b8] hover:bg-[#d8d4cb]"
                       }`}
                     >
                       <span
@@ -1064,12 +1057,12 @@ export default function AdminDashboardClient({
                         {idx + 1}. {sec.title}
                       </span>
                       <span
-                        className={`text-[9px] px-1.5 py-0.5 rounded shrink-0 ${
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded shrink-0 ${
                           sec.isActive
                             ? isCurrent
-                              ? "bg-[#F8B93C]/20 text-[#F8B93C]"
-                              : "bg-emerald-100/80 text-emerald-800"
-                            : "bg-stone-200 text-stone-600"
+                              ? "bg-[#4f8a2b] text-white"
+                              : "bg-[#3d2110] text-white"
+                            : "bg-[#b8b2a6] text-[#2c251f]"
                         }`}
                       >
                         {sec.isActive ? "ON" : "OFF"}
@@ -1081,137 +1074,137 @@ export default function AdminDashboardClient({
             )}
           </div>
 
-          <div className="pt-2">
+          <div className="pt-2.5 border-t border-[#c6c1b6]">
             <button
               type="button"
               onClick={() => setActiveTab("orders")}
-              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition-colors ${
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg text-xs font-semibold transition-colors border ${
                 activeTab === "orders"
-                  ? "bg-white text-[#1a1714] shadow-xs"
-                  : "text-[#4a4238] hover:bg-white/60"
+                  ? "bg-[#241307] text-[#fdfbf7] border-[#241307]"
+                  : "bg-[#e3e0d9] text-[#231f1c] border-[#c8c3b8] hover:bg-[#d8d4cb]"
               }`}
             >
               <span className="flex items-center gap-2">
-                <ClipboardList className="w-4 h-4 text-[#8c6d48]" />
+                <ClipboardList className="w-3.5 h-3.5 opacity-80" />
                 Orders
               </span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#f4f3f0] text-[#6b6256]">
-                {orders.length}
+              <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-white text-[#1a1714] border border-[#c8c3b8]">
+                {String(orders.length).padStart(2, "0")}
               </span>
             </button>
           </div>
 
-          <div className="pt-3 mt-3 border-t border-[#d4cec1]">
-            <p className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-[#6b6256]">
-              Wholesale Catalog
+          <div className="pt-3 mt-2 border-t border-[#c6c1b6]">
+            <p className="px-1 py-1 text-[11px] font-extrabold uppercase tracking-[0.06em] text-[#231f1c]">
+              WHOLESALE CATALOG
             </p>
 
-            <div className="space-y-1 mt-1">
+            <div className="space-y-2 mt-1.5">
               <button
                 type="button"
                 onClick={() => setActiveTab("brands")}
-                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition-colors ${
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg text-xs font-semibold transition-colors border ${
                   activeTab === "brands"
-                    ? "bg-white text-[#1a1714] shadow-xs"
-                    : "text-[#4a4238] hover:bg-white/60"
+                    ? "bg-[#241307] text-[#fdfbf7] border-[#241307]"
+                    : "bg-[#e3e0d9] text-[#231f1c] border-[#c8c3b8] hover:bg-[#d8d4cb]"
                 }`}
               >
                 <span className="flex items-center gap-2">
-                  <Tag className="w-4 h-4 text-[#8c6d48]" />
+                  <Tag className="w-3.5 h-3.5 opacity-80" />
                   Brands
                 </span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#f4f3f0] text-[#6b6256]">
-                  {brands.length}
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-white text-[#1a1714] border border-[#c8c3b8]">
+                  {String(brands.length).padStart(2, "0")}
                 </span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setActiveTab("categories")}
-                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition-colors ${
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg text-xs font-semibold transition-colors border ${
                   activeTab === "categories"
-                    ? "bg-white text-[#1a1714] shadow-xs"
-                    : "text-[#4a4238] hover:bg-white/60"
+                    ? "bg-[#241307] text-[#fdfbf7] border-[#241307]"
+                    : "bg-[#e3e0d9] text-[#231f1c] border-[#c8c3b8] hover:bg-[#d8d4cb]"
                 }`}
               >
                 <span className="flex items-center gap-2">
-                  <FolderTree className="w-4 h-4 text-[#8c6d48]" />
+                  <FolderTree className="w-3.5 h-3.5 opacity-80" />
                   Categories
                 </span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#f4f3f0] text-[#6b6256]">
-                  {categories.length}
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-white text-[#1a1714] border border-[#c8c3b8]">
+                  {String(categories.length).padStart(2, "0")}
                 </span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setActiveTab("collections")}
-                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition-colors ${
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg text-xs font-semibold transition-colors border ${
                   activeTab === "collections"
-                    ? "bg-white text-[#1a1714] shadow-xs"
-                    : "text-[#4a4238] hover:bg-white/60"
+                    ? "bg-[#241307] text-[#fdfbf7] border-[#241307]"
+                    : "bg-[#e3e0d9] text-[#231f1c] border-[#c8c3b8] hover:bg-[#d8d4cb]"
                 }`}
               >
                 <span className="flex items-center gap-2">
-                  <Boxes className="w-4 h-4 text-[#8c6d48]" />
+                  <Boxes className="w-3.5 h-3.5 opacity-80" />
                   Collections
                 </span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#f4f3f0] text-[#6b6256]">
-                  {collections.length}
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-white text-[#1a1714] border border-[#c8c3b8]">
+                  {String(collections.length).padStart(2, "0")}
                 </span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setActiveTab("products")}
-                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition-colors ${
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg text-xs font-semibold transition-colors border ${
                   activeTab === "products"
-                    ? "bg-white text-[#1a1714] shadow-xs"
-                    : "text-[#4a4238] hover:bg-white/60"
+                    ? "bg-[#241307] text-[#fdfbf7] border-[#241307]"
+                    : "bg-[#e3e0d9] text-[#231f1c] border-[#c8c3b8] hover:bg-[#d8d4cb]"
                 }`}
               >
                 <span className="flex items-center gap-2">
-                  <Package className="w-4 h-4 text-[#8c6d48]" />
+                  <Package className="w-3.5 h-3.5 opacity-80" />
                   Products
                 </span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#f4f3f0] text-[#6b6256]">
-                  {products.length}
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-white text-[#1a1714] border border-[#c8c3b8]">
+                  {String(products.length).padStart(2, "0")}
                 </span>
               </button>
             </div>
           </div>
 
-          <div className="pt-3 mt-3 border-t border-[#d4cec1]">
+          <div className="pt-2.5 border-t border-[#c6c1b6]">
             <button
               type="button"
               onClick={() => setActiveTab("files")}
-              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition-colors ${
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg text-xs font-semibold transition-colors border ${
                 activeTab === "files"
-                  ? "bg-white text-[#1a1714] shadow-xs"
-                  : "text-[#4a4238] hover:bg-white/60"
+                  ? "bg-[#241307] text-[#fdfbf7] border-[#241307]"
+                  : "bg-[#e3e0d9] text-[#231f1c] border-[#c8c3b8] hover:bg-[#d8d4cb]"
               }`}
             >
               <span className="flex items-center gap-2">
-                <FolderOpen className="w-4 h-4 text-[#8c6d48]" />
+                <FolderOpen className="w-3.5 h-3.5 opacity-80" />
                 Files
               </span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#f4f3f0] text-[#6b6256]">
-                {mediaList.length}
+              <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-white text-[#1a1714] border border-[#c8c3b8]">
+                {String(mediaList.length).padStart(2, "0")}
               </span>
             </button>
           </div>
         </aside>
 
         {/* Main Workspace */}
-        <main className="flex-1 min-w-0 p-4 md:p-5 md:h-full md:overflow-hidden flex flex-col">
+        <main className="flex-1 min-w-0 h-full overflow-hidden p-4 md:p-5 flex flex-col">
           {loading ? (
             <div className="py-20 text-center text-xs text-[#6b6256]">
               Loading CMS data...
             </div>
           ) : activeTab === "sections" ? (
-            <div className="w-full flex-1 min-h-0 flex flex-col lg:flex-row gap-4 items-stretch">
-              {/* Center Column: Stay Full Height */}
-              <div className="flex-1 min-w-0 w-full bg-white border border-[#e0dbd0] rounded-xl overflow-hidden shadow-xs flex flex-col min-h-[540px] lg:min-h-0">
+            <div className="w-full h-full min-h-0 flex flex-col lg:flex-row gap-4 items-stretch overflow-hidden">
+              {/* Center Column: Own Scrollbar */}
+              <div className="flex-1 min-w-0 h-full overflow-y-auto bg-white border border-[#e0dbd0] rounded-xl shadow-xs flex flex-col">
                 <div className="px-4 py-3 bg-[#faf8f4] border-b border-[#ece8df] flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <p className="text-[10px] font-bold uppercase tracking-wider text-[#8c6d48]">
@@ -1296,7 +1289,7 @@ export default function AdminDashboardClient({
                   </div>
                 </div>
 
-                <div className="p-3 bg-[#e4dfd5] flex-1 min-h-0 flex justify-center">
+                <div className="p-3 bg-[#e4dfd5] flex-1 min-h-[780px] flex justify-center">
                   <div
                     className={`w-full h-full bg-white border border-[#cfc6b6] rounded-xl overflow-hidden shadow-md transition-all ${
                       previewViewport === "mobile"
@@ -1309,14 +1302,14 @@ export default function AdminDashboardClient({
                       src="/?cmsPreview=1"
                       title="Storefront Theme Preview"
                       onLoad={() => postPreviewPayload()}
-                      className="w-full h-full border-0 block bg-white"
+                      className="w-full h-full min-h-[760px] border-0 block bg-white"
                     />
                   </div>
                 </div>
               </div>
 
-              {/* Right Column: Scrollable Settings */}
-              <div className="w-full lg:w-68 shrink-0 bg-white border border-[#e0dbd0] rounded-xl overflow-hidden shadow-xs lg:h-full lg:overflow-y-auto">
+              {/* Right Column: Own Scrollbar */}
+              <div className="w-full lg:w-68 shrink-0 h-full overflow-y-auto bg-white border border-[#e0dbd0] rounded-xl shadow-xs">
                 {editorFocus === "header" ? (
                   <>
                     <div className="px-4 py-3.5 border-b border-[#ece8df]">
