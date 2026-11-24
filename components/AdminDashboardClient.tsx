@@ -3,8 +3,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import * as XLSX from "xlsx";
 import { INITIAL_HERO_CONFIG } from "@/lib/storefront-data";
 import {
+  Users,
+  UserPlus,
+  FileSpreadsheet,
+  Download,
+  Check,
+  Ban,
   Tag,
   FolderTree,
   Package,
@@ -36,6 +43,7 @@ import {
 type AdminTab =
   | "sections"
   | "orders"
+  | "customers"
   | "brands"
   | "categories"
   | "collections"
@@ -87,6 +95,39 @@ interface OrderItem {
   total: number;
   status: string;
   date: string;
+}
+
+interface CustomerRecord {
+  id: number;
+  companyName: string;
+  contactName: string;
+  email: string;
+  phone: string | null;
+  licenseNumber: string | null;
+  status: string;
+  priceTier: string;
+  inviteToken: string | null;
+  notes: string | null;
+  createdAt: string;
+}
+
+interface ExcelImportRow {
+  sku: string;
+  name: string;
+  category: string;
+  brand: string;
+  vendor: string;
+  productType: string;
+  boxInfo: string;
+  origin: string;
+  shape: string;
+  wholesalePrice: string;
+  quickBooksPrice: string;
+  qboQtyOnHand: string;
+  description: string;
+  image: string;
+  isActive: boolean;
+  publicVisibilityOverride: boolean;
 }
 
 interface ProductRecord {
@@ -167,6 +208,45 @@ const INITIAL_ORDERS: OrderItem[] = [
   },
 ];
 
+const DEFAULT_COLLECTION_ITEMS = [
+  {
+    id: "premium-cigars",
+    title: "Premium Cigars",
+    count: "140",
+    description: "Hand-rolled Nicaraguan, Dominican...",
+    href: "/products?category=cigars",
+    image: "",
+    onlyVisibleForCustomer: false,
+  },
+  {
+    id: "cigarettes",
+    title: "Cigarettes & Little Cigars",
+    count: "45",
+    description: "High-turnover retail cartons &...",
+    href: "/products?category=cigarettes",
+    image: "",
+    onlyVisibleForCustomer: false,
+  },
+  {
+    id: "vapes",
+    title: "Vapes & E-Cigs",
+    count: "68",
+    description: "Compliant retail displays & top-...",
+    href: "/products?category=vapes",
+    image: "",
+    onlyVisibleForCustomer: false,
+  },
+  {
+    id: "accessories",
+    title: "Accessories",
+    count: "32",
+    description: "Humidors, cutters, torch lighters &...",
+    href: "/products?category=accessories",
+    image: "",
+    onlyVisibleForCustomer: false,
+  },
+];
+
 const HANDLED_CONTENT_KEYS = new Set([
   "heading",
   "headingSize",
@@ -193,64 +273,8 @@ const HANDLED_CONTENT_KEYS = new Set([
   "collectionEnabled",
   "blocks",
   "items",
-  "LogoSize",
+  "logoSize",
 ]);
-
-const DEFAULT_COLLECTION_ITEMS = [
-  {
-    id: "premium-cigars",
-    title: "Premium Cigars",
-    count: "140",
-    description: "Hand-rolled Nicaraguan, Dominican...",
-    href: "/products?category=cigars",
-    image: "",
-  },
-  {
-    id: "cigarettes",
-    title: "Cigarettes & Little Cigars",
-    count: "45",
-    description: "High-turnover retail cartons &...",
-    href: "/products?category=cigarettes",
-    image: "",
-  },
-  {
-    id: "vapes",
-    title: "Vapes & E-Cigs",
-    count: "68",
-    description: "Compliant retail displays & top-...",
-    href: "/products?category=vapes",
-    image: "",
-  },
-  {
-    id: "accessories",
-    title: "Accessories",
-    count: "32",
-    description: "Humidors, cutters, torch lighters &...",
-    href: "/products?category=accessories",
-    image: "",
-  },
-];
-
-const DEFAULT_COLLECTION_CONTENT: Record<string, unknown> = {
-  heading: "",
-  headingSize: 36,
-  headingStyle: "bold",
-  textColor: "#1a1714",
-  showDivider: false,
-  dividerWidth: 100,
-  dividerThickness: 1,
-  bgColor: "#fdfbf7",
-  bgImage: "",
-  overlayEnabled: false,
-  overlayColor: "#000000",
-  overlayOpacity: 40,
-  onlyVisibleForCustomer: false,
-  cardRadius: 16,
-  cardBorder: true,
-  cardBorderColor: "#e5dfd3",
-  cardShadow: "sm",
-  items: DEFAULT_COLLECTION_ITEMS,
-};
 
 function formatSectionLabel(sec: CmsSectionRecord): string {
   const title = sec.title.trim();
@@ -258,13 +282,10 @@ function formatSectionLabel(sec: CmsSectionRecord): string {
     return "Hero Section";
   }
   if (
-    sec.type === "EDITORIAL_CATEGORIES" &&
-    title.toLowerCase().includes("editorial")
+    sec.type === "EDITORIAL_CATEGORIES" ||
+    sec.type === "COLLECTION_SECTION"
   ) {
-    return "Story Section";
-  }
-  if (sec.type === "COLLECTION_SECTION") {
-    return title || "Collection Section";
+    return "Collection Section";
   }
   if (sec.type === "FOOTER" && title.toLowerCase().includes("trust")) {
     return "TrustBar";
@@ -287,12 +308,10 @@ export default function AdminDashboardClient({
     useState<PreviewViewport>("desktop");
 
   const [headerDraft, setHeaderDraft] = useState({
-    // Logo & Position
     logoImage: "/lacigars-logo.png",
     logoHeightDesktop: 58,
     logoHeightMobile: 46,
     logoPositionDesktop: "left",
-    // Navigation
     mainMenu: "main-menu",
     autoFillBrandsDropdown: true,
     autoFillCollectionDropdown: true,
@@ -301,14 +320,12 @@ export default function AdminDashboardClient({
     menuFontSize: 12,
     menuItemSpacing: 22,
     uppercaseMenuLinks: true,
-    // Header Icons & Layout
     stickyHeader: true,
     showSearchIcon: true,
     showLanguageIcon: false,
     showAccountIcon: true,
     headerPaddingY: 12,
     maxContainerWidth: 1600,
-    // Cart Drawer
     autoOpenCartOnQuickAdd: true,
     freeShippingThreshold: 100,
     freeShippingProgressText:
@@ -316,7 +333,6 @@ export default function AdminDashboardClient({
     freeShippingUnlockedText:
       "You've unlocked Free Domestic Standard Shipping!",
     cartBadgeColor: "#D92D20",
-    // Mobile Menu Footer
     facebookUrl: "",
     tiktokUrl: "",
     instagramUrl: "",
@@ -324,7 +340,6 @@ export default function AdminDashboardClient({
     mobileCtaLink: "",
     mobileCopyrightText:
       "© 2026 Latin American Cigars Corp. All Rights Reserved.",
-    // Colors
     headerBgColor: "#FFFFFF",
     headerTextColor: "#10231C",
     headerHoverAccentColor: "#214335",
@@ -332,9 +347,22 @@ export default function AdminDashboardClient({
   });
 
   const [footerDraft, setFooterDraft] = useState({
-    tagline: "",
-    copyright: "",
-    contactEmail: "",
+    logoImage: "/lacigars-logo.png",
+    logoHeight: 44,
+    brandLine1: "LATIN AMERICAN",
+    brandLine2: "CIGARS CORP.",
+    tagline:
+      "Wholesale distributor of premium cigars, cigarettes, vapes, and tobacco accessories serving licensed retailers across Florida.",
+    ctaHeading: "Ready to stock your store?",
+    ctaDescription:
+      "Apply for an approved wholesale account to unlock full catalog pricing and online ordering.",
+    ctaLabel: "BECOME A CUSTOMER",
+    ctaHref: "/contact",
+    copyright: "© 2026 Latin American Cigars Corp. All Rights Reserved.",
+    bottomRightText: "FLORIDA LICENSED B2B WHOLESALE DISTRIBUTOR",
+    bgColor: "#141210",
+    textColor: "#fdfbf7",
+    accentColor: "#F8B93C",
   });
 
   const [sections, setSections] = useState<CmsSectionRecord[]>([]);
@@ -345,6 +373,26 @@ export default function AdminDashboardClient({
   const [editContentJson, setEditContentJson] = useState("{}");
 
   const [orders] = useState<OrderItem[]>(INITIAL_ORDERS);
+
+  const [customers, setCustomers] = useState<CustomerRecord[]>([]);
+  const [customerSearch, setCustomerSearch] = useState("");
+  const [customerFilter, setCustomerFilter] = useState<string>("ALL");
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [inviteForm, setInviteForm] = useState({
+    companyName: "",
+    contactName: "",
+    email: "",
+    phone: "",
+    licenseNumber: "",
+    priceTier: "STANDARD",
+    status: "INVITED",
+    notes: "",
+  });
+
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importRows, setImportRows] = useState<ExcelImportRow[]>([]);
+  const [importFileName, setImportFileName] = useState("");
+  const [importingExcel, setImportingExcel] = useState(false);
 
   const [brands, setBrands] = useState<BrandRecord[]>([]);
   const [newBrandName, setNewBrandName] = useState("");
@@ -385,42 +433,13 @@ export default function AdminDashboardClient({
     router.refresh();
   };
 
+  // Pastikan tidak pernah ada duplikat antara Story Section & Collection Section
   const displaySections = useMemo(() => {
-    const hasCollectionRow = sections.some(
+    const hasDedicatedCollection = sections.some(
       (s) => s.type === "COLLECTION_SECTION"
     );
-    if (hasCollectionRow) return sections;
-
-    const list: CmsSectionRecord[] = [];
-    for (const sec of sections) {
-      list.push(sec);
-      if (sec.type === "EDITORIAL_CATEGORIES") {
-        const storyContent = (sec.content ?? {}) as Record<string, unknown>;
-        const colContent =
-          storyContent.collectionSection &&
-          typeof storyContent.collectionSection === "object"
-            ? {
-                ...DEFAULT_COLLECTION_CONTENT,
-                ...(storyContent.collectionSection as Record<string, unknown>),
-              }
-            : DEFAULT_COLLECTION_CONTENT;
-        const colActive =
-          storyContent.collectionEnabled !== undefined
-            ? Boolean(storyContent.collectionEnabled)
-            : true;
-
-        list.push({
-          id: -100,
-          key: "home-collection-section",
-          type: "COLLECTION_SECTION",
-          title: "Collection Section",
-          content: colContent,
-          sortOrder: sec.sortOrder + 0.5,
-          isActive: colActive,
-        });
-      }
-    }
-    return list;
+    if (!hasDedicatedCollection) return sections;
+    return sections.filter((s) => s.type !== "EDITORIAL_CATEGORIES");
   }, [sections]);
 
   const selectedSection =
@@ -428,6 +447,10 @@ export default function AdminDashboardClient({
 
   const selectedSectionIndex = selectedSection
     ? displaySections.findIndex((s) => s.id === selectedSection.id)
+    : -1;
+
+  const realSectionIndex = selectedSection
+    ? sections.findIndex((s) => s.id === selectedSection.id)
     : -1;
 
   const parsedEditorObj: Record<string, unknown> | null = (() => {
@@ -489,12 +512,81 @@ export default function AdminDashboardClient({
     const resolvedIndex =
       typeof index === "number"
         ? index
-        : sections.findIndex((s) => s.id === section.id);
+        : displaySections.findIndex((s) => s.id === section.id);
     setActiveTab("sections");
     setEditorFocus("homepage");
     setSelectedSectionId(section.id);
-    setEditTitle(section.title);
-    setEditContentJson(JSON.stringify(section.content ?? {}, null, 2));
+    setEditTitle(formatSectionLabel(section));
+
+    const nextContent: Record<string, unknown> = { ...(section.content ?? {}) };
+    if (
+      section.type === "EDITORIAL_CATEGORIES" ||
+      section.type === "COLLECTION_SECTION"
+    ) {
+      const nested =
+        nextContent.collectionSection &&
+        typeof nextContent.collectionSection === "object"
+          ? (nextContent.collectionSection as Record<string, unknown>)
+          : {};
+
+      if (!Array.isArray(nextContent.items)) {
+        nextContent.items = Array.isArray(nested.items)
+          ? nested.items
+          : DEFAULT_COLLECTION_ITEMS;
+      }
+      if (nextContent.cardRadius === undefined && nested.cardRadius !== undefined) {
+        nextContent.cardRadius = nested.cardRadius;
+      }
+      if (nextContent.cardBorder === undefined && nested.cardBorder !== undefined) {
+        nextContent.cardBorder = nested.cardBorder;
+      }
+      if (
+        nextContent.cardBorderColor === undefined &&
+        nested.cardBorderColor !== undefined
+      ) {
+        nextContent.cardBorderColor = nested.cardBorderColor;
+      }
+      if (nextContent.cardShadow === undefined && nested.cardShadow !== undefined) {
+        nextContent.cardShadow = nested.cardShadow;
+      }
+      if (
+        !nextContent.heading ||
+        String(nextContent.heading).toLowerCase() ===
+          "a legacy of reliable wholesale distribution."
+      ) {
+        nextContent.heading =
+          "Curated wholesale collections built for retail velocity.";
+      }
+      if (
+        !nextContent.ctaLabel ||
+        String(nextContent.ctaLabel).toLowerCase() === "our story"
+      ) {
+        nextContent.ctaLabel = "Our Collection";
+      }
+      if (!nextContent.ctaHref || nextContent.ctaHref === "/company") {
+        nextContent.ctaHref = "/products";
+      }
+      if (
+        !nextContent.paragraph1 ||
+        String(nextContent.paragraph1).startsWith(
+          "Based in Florida, Latin American Cigars Corp."
+        )
+      ) {
+        nextContent.paragraph1 =
+          "Explore our core wholesale categories curated specifically for licensed tobacconists, smoke shops, and retail lounges across Florida. Every line is selected for consistent availability and strong shelf turn.";
+      }
+      if (
+        !nextContent.paragraph2 ||
+        String(nextContent.paragraph2).startsWith(
+          "From flagship hand-rolled humidors"
+        )
+      ) {
+        nextContent.paragraph2 =
+          "From hand-rolled premium cigars and high-demand cigarette cartons to compliant vape displays and humidor accessories, stock your entire storefront through one dependable distributor.";
+      }
+    }
+
+    setEditContentJson(JSON.stringify(nextContent, null, 2));
     setTimeout(() => {
       postPreviewPayload("homepage", section.id, resolvedIndex);
     }, 0);
@@ -503,13 +595,15 @@ export default function AdminDashboardClient({
   const loadData = async () => {
     setLoading(true);
     try {
-      const [secRes, brRes, catRes, prodRes, medRes] = await Promise.all([
-        fetch("/api/cms/sections"),
-        fetch("/api/cms/brands"),
-        fetch("/api/cms/categories"),
-        fetch("/api/cms/products"),
-        fetch("/api/cms/media"),
-      ]);
+      const [secRes, brRes, catRes, prodRes, medRes, custRes] =
+        await Promise.all([
+          fetch("/api/cms/sections"),
+          fetch("/api/cms/brands"),
+          fetch("/api/cms/categories"),
+          fetch("/api/cms/products"),
+          fetch("/api/cms/media"),
+          fetch("/api/cms/customers").catch(() => null),
+        ]);
 
       if (!secRes.ok || !brRes.ok || !catRes.ok || !prodRes.ok) {
         throw new Error("Database API returned an error");
@@ -533,6 +627,11 @@ export default function AdminDashboardClient({
         setMediaList(medData.media ?? []);
       }
 
+      if (custRes && custRes.ok) {
+        const custData = await custRes.json();
+        setCustomers(custData.customers ?? []);
+      }
+
       const headerSec = loadedSections.find(
         (s) =>
           s.type.toUpperCase().includes("HEADER") ||
@@ -550,26 +649,16 @@ export default function AdminDashboardClient({
           s.type.toUpperCase().includes("FOOTER") ||
           s.key.toLowerCase().includes("footer")
       );
-      if (footerSec?.content) {
-        setFooterDraft({
-          tagline:
-            typeof footerSec.content.tagline === "string"
-              ? footerSec.content.tagline
-              : "",
-          copyright:
-            typeof footerSec.content.copyright === "string"
-              ? footerSec.content.copyright
-              : "",
-          contactEmail:
-            typeof footerSec.content.contactEmail === "string"
-              ? footerSec.content.contactEmail
-              : "",
-        });
+      if (footerSec?.content && typeof footerSec.content === "object") {
+        setFooterDraft((prev) => ({
+          ...prev,
+          ...(footerSec.content as Partial<typeof prev>),
+        }));
       }
 
       if (loadedSections.length > 0 && selectedSectionId === null) {
         setSelectedSectionId(loadedSections[0].id);
-        setEditTitle(loadedSections[0].title);
+        setEditTitle(formatSectionLabel(loadedSections[0]));
         setEditContentJson(
           JSON.stringify(loadedSections[0].content ?? {}, null, 2)
         );
@@ -594,7 +683,7 @@ export default function AdminDashboardClient({
     postPreviewPayload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    sections,
+    displaySections,
     selectedSectionId,
     editTitle,
     editContentJson,
@@ -713,6 +802,13 @@ export default function AdminDashboardClient({
     showToast("success", `Header logo "${file.name}" applied.`);
   };
 
+  const handleFooterLogoUpload = async (file: File) => {
+    const uploaded = await uploadMediaFile(file);
+    if (!uploaded) return;
+    setFooterDraft((prev) => ({ ...prev, logoImage: uploaded.url }));
+    showToast("success", `Footer logo "${file.name}" applied.`);
+  };
+
   const handleSaveHeaderGroup = async () => {
     const headerSec = sections.find(
       (s) =>
@@ -760,35 +856,6 @@ export default function AdminDashboardClient({
 
   const handleToggleSection = async (section: CmsSectionRecord) => {
     try {
-      if (section.id === -100) {
-        const storySec = sections.find(
-          (s) => s.type === "EDITORIAL_CATEGORIES"
-        );
-        if (!storySec) return;
-        const nextActive = !section.isActive;
-        const res = await fetch("/api/cms/sections", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            id: storySec.id,
-            content: {
-              ...(storySec.content ?? {}),
-              collectionEnabled: nextActive,
-            },
-          }),
-        });
-        if (!res.ok) throw new Error();
-        const { section: updated } = await res.json();
-        setSections((prev) =>
-          prev.map((s) => (s.id === updated.id ? updated : s))
-        );
-        showToast(
-          "success",
-          `Collection Section ${nextActive ? "enabled" : "hidden"}.`
-        );
-        return;
-      }
-
       const res = await fetch("/api/cms/sections", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -815,7 +882,7 @@ export default function AdminDashboardClient({
 
   const handleMoveSection = async (index: number, direction: -1 | 1) => {
     const target = index + direction;
-    if (target < 0 || target >= sections.length) return;
+    if (index < 0 || target < 0 || target >= sections.length) return;
 
     const reordered = [...sections];
     const [moved] = reordered.splice(index, 1);
@@ -850,31 +917,6 @@ export default function AdminDashboardClient({
 
     setSaving(true);
     try {
-      if (selectedSection.id === -100) {
-        const storySec = sections.find(
-          (s) => s.type === "EDITORIAL_CATEGORIES"
-        );
-        if (!storySec) throw new Error();
-        const res = await fetch("/api/cms/sections", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            id: storySec.id,
-            content: {
-              ...(storySec.content ?? {}),
-              collectionSection: parsedContent,
-            },
-          }),
-        });
-        if (!res.ok) throw new Error();
-        const { section: updated } = await res.json();
-        setSections((prev) =>
-          prev.map((s) => (s.id === updated.id ? updated : s))
-        );
-        showToast("success", "Collection Section saved to database.");
-        return;
-      }
-
       const res = await fetch("/api/cms/sections", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -912,9 +954,7 @@ export default function AdminDashboardClient({
     try {
       const nextContent = {
         ...(footerSec.content ?? {}),
-        tagline: footerDraft.tagline,
-        copyright: footerDraft.copyright,
-        contactEmail: footerDraft.contactEmail,
+        ...footerDraft,
       };
       const res = await fetch("/api/cms/sections", {
         method: "PATCH",
@@ -929,9 +969,9 @@ export default function AdminDashboardClient({
       setSections((prev) =>
         prev.map((s) => (s.id === updated.id ? updated : s))
       );
-      showToast("success", "Footer group saved to database.");
+      showToast("success", "Footer settings saved to database.");
     } catch {
-      showToast("error", "Failed to save footer group.");
+      showToast("error", "Failed to save footer settings.");
     } finally {
       setSaving(false);
     }
@@ -1196,6 +1236,259 @@ export default function AdminDashboardClient({
     showToast("success", "File URL copied to clipboard.");
   };
 
+  const handleInviteCustomer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (
+      !inviteForm.companyName.trim() ||
+      !inviteForm.contactName.trim() ||
+      !inviteForm.email.trim()
+    ) {
+      showToast("error", "Company, Contact Name, and Email are required.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch("/api/cms/customers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(inviteForm),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showToast("error", data.error || "Failed to invite customer.");
+        return;
+      }
+      setCustomers((prev) => [data.customer, ...prev]);
+      setShowInviteModal(false);
+      setInviteForm({
+        companyName: "",
+        contactName: "",
+        email: "",
+        phone: "",
+        licenseNumber: "",
+        priceTier: "STANDARD",
+        status: "INVITED",
+        notes: "",
+      });
+      showToast("success", `Customer "${data.customer.companyName}" invited.`);
+    } catch {
+      showToast("error", "Failed to invite customer.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleUpdateCustomerStatus = async (
+    customer: CustomerRecord,
+    status: string
+  ) => {
+    try {
+      const res = await fetch("/api/cms/customers", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: customer.id, status }),
+      });
+      if (!res.ok) throw new Error();
+      const { customer: updated } = await res.json();
+      setCustomers((prev) =>
+        prev.map((c) => (c.id === updated.id ? updated : c))
+      );
+      showToast("success", `${updated.companyName} marked as ${status}.`);
+    } catch {
+      showToast("error", "Failed to update customer status.");
+    }
+  };
+
+  const handleDeleteCustomer = async (customer: CustomerRecord) => {
+    if (!confirm(`Delete customer "${customer.companyName}"?`)) return;
+    try {
+      const res = await fetch(`/api/cms/customers?id=${customer.id}`, {
+        method: "DELETE",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showToast("error", data.error || "Failed to delete customer.");
+        return;
+      }
+      setCustomers((prev) => prev.filter((c) => c.id !== customer.id));
+      showToast("success", `Customer "${customer.companyName}" deleted.`);
+    } catch {
+      showToast("error", "Failed to delete customer.");
+    }
+  };
+
+  const handleCopyInviteLink = (customer: CustomerRecord) => {
+    const origin =
+      typeof window !== "undefined" ? window.location.origin : "";
+    const link = `${origin}/wholesale?invite=${
+      customer.inviteToken || customer.id
+    }&email=${encodeURIComponent(customer.email)}`;
+    navigator.clipboard?.writeText(link);
+    showToast("success", "Customer invite link copied.");
+  };
+
+  const handleDownloadExcelTemplate = () => {
+    const sample = [
+      {
+        SKU: "LAC-ELB-ROB20",
+        Name: "El Bacán Reserve Robusto (Box of 20)",
+        Category: "Premium Cigars",
+        Brand: "El Bacán",
+        Vendor: "El Bacán",
+        "Product Type": "Cigars",
+        "Box Info": "Box of 20",
+        Origin: "Nicaragua",
+        Shape: "Robusto 5x52",
+        "Wholesale Price": 145,
+        "QBO Price": 160,
+        Inventory: 25,
+        Description: "Hand-rolled Nicaraguan Habano blend.",
+        Image: "",
+        Active: "TRUE",
+        Public: "TRUE",
+      },
+    ];
+    const ws = XLSX.utils.json_to_sheet(sample);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Products");
+    XLSX.writeFile(wb, "LAC_Products_Import_Template.xlsx");
+  };
+
+  const handleExcelFileChange = async (file: File) => {
+    try {
+      const buffer = await file.arrayBuffer();
+      const wb = XLSX.read(buffer, { type: "array" });
+      const firstSheet = wb.Sheets[wb.SheetNames[0]];
+      const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(
+        firstSheet,
+        { defval: "" }
+      );
+
+      const pick = (row: Record<string, unknown>, keys: string[]): string => {
+        const lowerMap = new Map<string, unknown>();
+        for (const [k, v] of Object.entries(row)) {
+          lowerMap.set(k.trim().toLowerCase().replace(/[\s_-]+/g, ""), v);
+        }
+        for (const k of keys) {
+          const val = lowerMap.get(k);
+          if (val !== undefined && String(val).trim() !== "") {
+            return String(val).trim();
+          }
+        }
+        return "";
+      };
+
+      const parsed: ExcelImportRow[] = rawRows
+        .map((row) => {
+          const activeRaw = pick(row, ["active", "isactive", "status"]);
+          const publicRaw = pick(row, ["public", "ispublic", "visible"]);
+          return {
+            sku: pick(row, ["sku", "itemcode", "code", "partnumber"]),
+            name: pick(row, [
+              "name",
+              "productname",
+              "title",
+              "item",
+              "itemname",
+            ]),
+            category: pick(row, ["category", "categoryname", "group"]),
+            brand: pick(row, ["brand", "manufacturer"]),
+            vendor: pick(row, ["vendor", "supplier", "brand"]),
+            productType: pick(row, ["producttype", "type", "category"]),
+            boxInfo: pick(row, [
+              "boxinfo",
+              "pack",
+              "packsize",
+              "unit",
+              "sellingunit",
+            ]),
+            origin: pick(row, ["origin", "country"]),
+            shape: pick(row, ["shape", "vitola", "size"]),
+            wholesalePrice: pick(row, [
+              "wholesaleprice",
+              "wholesale",
+              "b2bprice",
+              "cost",
+            ]),
+            quickBooksPrice: pick(row, [
+              "qboprice",
+              "quickbooksprice",
+              "price",
+              "retailprice",
+              "msrp",
+            ]),
+            qboQtyOnHand: pick(row, [
+              "inventory",
+              "qty",
+              "quantity",
+              "stock",
+              "qtyonhand",
+              "qboqtyonhand",
+            ]),
+            description: pick(row, ["description", "desc", "notes"]),
+            image: pick(row, ["image", "imageurl", "photo"]),
+            isActive: activeRaw
+              ? !["false", "0", "no", "draft", "inactive"].includes(
+                  activeRaw.toLowerCase()
+                )
+              : true,
+            publicVisibilityOverride: publicRaw
+              ? !["false", "0", "no", "private"].includes(
+                  publicRaw.toLowerCase()
+                )
+              : true,
+          };
+        })
+        .filter((r) => r.sku || r.name);
+
+      if (parsed.length === 0) {
+        showToast("error", "No valid product rows found in file.");
+        return;
+      }
+
+      setImportFileName(file.name);
+      setImportRows(parsed);
+    } catch {
+      showToast(
+        "error",
+        "Failed to read Excel file. Use .xlsx, .xls, or .csv."
+      );
+    }
+  };
+
+  const handleConfirmExcelImport = async () => {
+    if (importRows.length === 0) return;
+    setImportingExcel(true);
+    try {
+      const res = await fetch("/api/cms/products/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rows: importRows }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showToast("error", data.error || "Excel import failed.");
+        return;
+      }
+
+      if (Array.isArray(data.products)) setProducts(data.products);
+      if (Array.isArray(data.categories)) setCategories(data.categories);
+      setShowImportModal(false);
+      setImportRows([]);
+      setImportFileName("");
+      showToast(
+        "success",
+        `Import selesai: ${data.created} baru, ${data.updated} diupdate${
+          data.skipped ? `, ${data.skipped} dilewati` : ""
+        }.`
+      );
+    } catch {
+      showToast("error", "Failed to import products.");
+    } finally {
+      setImportingExcel(false);
+    }
+  };
+
   const filteredProducts = products.filter((p) => {
     const q = productSearch.trim().toLowerCase();
     if (!q) return true;
@@ -1218,8 +1511,27 @@ export default function AdminDashboardClient({
     );
   });
 
+  const pendingCustomersCount = customers.filter(
+    (c) => c.status === "PENDING"
+  ).length;
+
+  const filteredCustomers = customers.filter((c) => {
+    if (customerFilter !== "ALL" && c.status !== customerFilter) return false;
+    const q = customerSearch.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      c.companyName.toLowerCase().includes(q) ||
+      c.contactName.toLowerCase().includes(q) ||
+      c.email.toLowerCase().includes(q) ||
+      (c.licenseNumber ?? "").toLowerCase().includes(q)
+    );
+  });
+
   const isFeaturedProduct = selectedSection?.type === "FEATURED_PRODUCT";
   const isBestSellers = selectedSection?.type === "BEST_SELLERS";
+  const isCollectionSection =
+    selectedSection?.type === "EDITORIAL_CATEGORIES" ||
+    selectedSection?.type === "COLLECTION_SECTION";
 
   return (
     <div className="relative z-100 h-screen overflow-hidden bg-[#f4f3f0] text-[#1a1714] flex flex-col">
@@ -1306,9 +1618,7 @@ export default function AdminDashboardClient({
                 type="button"
                 onClick={() => setThemeSectionsOpen((prev) => !prev)}
                 className="p-0.5 rounded hover:bg-[#d3cfc6] text-[#3d2110]"
-                title={
-                  themeSectionsOpen ? "Collapse editor" : "Expand editor"
-                }
+                title={themeSectionsOpen ? "Collapse editor" : "Expand editor"}
               >
                 {themeSectionsOpen ? (
                   <ChevronDown className="w-3.5 h-3.5" />
@@ -1319,7 +1629,7 @@ export default function AdminDashboardClient({
             </div>
 
             {themeSectionsOpen && (
-              <div className="mt-2 space-y-2">
+              <div className="pt-2 space-y-2">
                 {/* 1. Header */}
                 <button
                   type="button"
@@ -1394,7 +1704,11 @@ export default function AdminDashboardClient({
               </div>
             )}
           </div>
-          <div className="pt-2.5 border-t border-[#c6c1b6]">
+
+          {/* Divider akhir Theme Editor (di bawah Footer) */}
+          <hr className="border-[#b9b3a6] my-3" />
+
+          <div className="space-y-2">
             <button
               type="button"
               onClick={() => setActiveTab("orders")}
@@ -1412,9 +1726,37 @@ export default function AdminDashboardClient({
                 {String(orders.length).padStart(2, "0")}
               </span>
             </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab("customers")}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg text-xs font-semibold transition-colors border ${
+                activeTab === "customers"
+                  ? "bg-[#241307] text-[#fdfbf7] border-[#241307]"
+                  : "bg-[#e3e0d9] text-[#231f1c] border-[#c8c3b8] hover:bg-[#d8d4cb]"
+              }`}
+            >
+              <span className="flex items-center gap-2 truncate">
+                <Users className="w-3.5 h-3.5 opacity-80 shrink-0" />
+                <span className="truncate">Customer List</span>
+              </span>
+              <span className="flex items-center gap-1 shrink-0">
+                {pendingCustomersCount > 0 && (
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500 text-white">
+                    {pendingCustomersCount}
+                  </span>
+                )}
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-white text-[#1a1714] border border-[#c8c3b8]">
+                  {String(customers.length).padStart(2, "0")}
+                </span>
+              </span>
+            </button>
           </div>
 
-          <div className="pt-3 border-t border-[#c6c1b6] space-y-1.5">
+          {/* Divider di bawah Customer List (di atas Wholesale Catalog) */}
+          <hr className="border-[#b9b3a6] my-3" />
+
+          <div className="space-y-1.5">
             <p className="px-1 py-1 text-[11px] font-extrabold uppercase tracking-[0.06em] text-[#231f1c]">
               WHOLESALE CATALOG
             </p>
@@ -1532,53 +1874,50 @@ export default function AdminDashboardClient({
                     </p>
                     <h2 className="text-xs font-bold text-[#1a1714]">
                       {editorFocus === "header"
-                        ? "Header Group"
+                        ? "Header"
                         : editorFocus === "footer"
-                        ? "Footer Group"
+                        ? "Footer"
                         : selectedSection
-                        ? selectedSection.title
+                        ? formatSectionLabel(selectedSection)
                         : "Homepage"}
                     </h2>
                   </div>
 
                   <div className="flex items-center gap-2">
-                    {editorFocus === "homepage" &&
-                      selectedSection &&
-                      selectedSectionIndex >= 0 && (
-                        <div className="flex items-center gap-1 bg-[#ebe8e1] px-2 py-1 rounded-lg">
-                          <button
-                            type="button"
-                            disabled={selectedSectionIndex === 0}
-                            onClick={() =>
-                              handleMoveSection(selectedSectionIndex, -1)
-                            }
-                            className="p-0.5 rounded hover:bg-white disabled:opacity-30"
-                            title="Move Section Up"
-                          >
-                            <ArrowUp className="w-3 h-3" />
-                          </button>
-                          <button
-                            type="button"
-                            disabled={
-                              selectedSectionIndex === sections.length - 1
-                            }
-                            onClick={() =>
-                              handleMoveSection(selectedSectionIndex, 1)
-                            }
-                            className="p-0.5 rounded hover:bg-white disabled:opacity-30"
-                            title="Move Section Down"
-                          >
-                            <ArrowDown className="w-3 h-3" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleToggleSection(selectedSection)}
-                            className="px-1.5 py-0.5 rounded text-[10px] font-bold hover:bg-white"
-                          >
-                            {selectedSection.isActive ? "ON" : "OFF"}
-                          </button>
-                        </div>
-                      )}
+                    {editorFocus === "homepage" && selectedSection && (
+                      <div className="flex items-center gap-1 bg-[#ebe8e1] px-2 py-1 rounded-lg">
+                        <button
+                          type="button"
+                          disabled={realSectionIndex <= 0}
+                          onClick={() =>
+                            handleMoveSection(realSectionIndex, -1)
+                          }
+                          className="p-0.5 rounded hover:bg-white disabled:opacity-30"
+                          title="Move Section Up"
+                        >
+                          <ArrowUp className="w-3 h-3" />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={
+                            realSectionIndex < 0 ||
+                            realSectionIndex === sections.length - 1
+                          }
+                          onClick={() => handleMoveSection(realSectionIndex, 1)}
+                          className="p-0.5 rounded hover:bg-white disabled:opacity-30"
+                          title="Move Section Down"
+                        >
+                          <ArrowDown className="w-3 h-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleSection(selectedSection)}
+                          className="px-1.5 py-0.5 rounded text-[10px] font-bold hover:bg-white"
+                        >
+                          {selectedSection.isActive ? "ON" : "OFF"}
+                        </button>
+                      </div>
+                    )}
 
                     <div className="flex items-center gap-1 bg-[#ebe8e1] p-1 rounded-lg">
                       <button
@@ -1635,7 +1974,7 @@ export default function AdminDashboardClient({
                     <div className="px-4 py-3.5 border-b border-[#ece8df] flex items-center justify-between gap-2 sticky top-0 bg-white z-10">
                       <div className="min-w-0">
                         <p className="text-[10px] font-mono uppercase text-[#8c6d48] truncate">
-                          GLOBAL HEADER GROUP
+                          GLOBAL HEADER
                         </p>
                         <h2 className="text-sm font-bold text-[#1a1714] truncate">
                           Header Settings
@@ -2456,10 +2795,10 @@ export default function AdminDashboardClient({
                     <div className="px-4 py-3.5 border-b border-[#ece8df] flex items-center justify-between gap-2 sticky top-0 bg-white z-10">
                       <div className="min-w-0">
                         <p className="text-[10px] font-mono uppercase text-[#8c6d48] truncate">
-                          GLOBAL FOOTER GROUP
+                          GLOBAL FOOTER
                         </p>
                         <h2 className="text-sm font-bold text-[#1a1714] truncate">
-                          Edit: Footer Group
+                          Footer Settings
                         </h2>
                       </div>
                       <button
@@ -2472,54 +2811,327 @@ export default function AdminDashboardClient({
                         {saving ? "..." : "Save"}
                       </button>
                     </div>
-                    <div className="p-4 space-y-3">
-                      <div className="space-y-1">
-                        <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
-                          Footer Tagline
-                        </label>
-                        <textarea
-                          rows={3}
-                          value={footerDraft.tagline}
-                          onChange={(e) =>
-                            setFooterDraft({
-                              ...footerDraft,
-                              tagline: e.target.value,
-                            })
-                          }
-                          className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
-                        />
+
+                    <div className="p-4 space-y-5 text-xs text-[#231f1c]">
+                      {/* 1. BRAND & LOGO */}
+                      <div className="space-y-3">
+                        <p className="text-xs font-bold text-[#1a1714]">
+                          Brand &amp; Logo
+                        </p>
+
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] text-[#4a4238]">
+                              Footer Logo
+                            </span>
+                            <label className="inline-flex items-center gap-1 px-2 py-1 rounded bg-[#1a1714] hover:bg-[#8c6d48] text-white text-[10px] font-bold cursor-pointer">
+                              <Upload className="w-3 h-3" />
+                              {uploadingImage ? "..." : "Upload"}
+                              <input
+                                type="file"
+                                accept="image/*"
+                                disabled={uploadingImage}
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) handleFooterLogoUpload(file);
+                                  e.target.value = "";
+                                }}
+                                className="hidden"
+                              />
+                            </label>
+                          </div>
+
+                          <div className="h-16 rounded-xl border border-[#dcd4c5] bg-[#141210] overflow-hidden flex items-center justify-center p-2">
+                            {footerDraft.logoImage ? (
+                              <img
+                                src={footerDraft.logoImage}
+                                alt="Footer Logo"
+                                className="max-h-full max-w-full object-contain"
+                              />
+                            ) : (
+                              <span className="text-[10px] text-[#a3998b]">
+                                No logo
+                              </span>
+                            )}
+                          </div>
+
+                          {mediaList.length > 0 && (
+                            <select
+                              value={
+                                mediaList.some(
+                                  (m) => m.url === footerDraft.logoImage
+                                )
+                                  ? footerDraft.logoImage
+                                  : ""
+                              }
+                              onChange={(e) => {
+                                if (e.target.value) {
+                                  setFooterDraft({
+                                    ...footerDraft,
+                                    logoImage: e.target.value,
+                                  });
+                                }
+                              }}
+                              className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
+                            >
+                              <option value="">-- Pick logo from Files --</option>
+                              {mediaList.map((m) => (
+                                <option key={m.id} value={m.url}>
+                                  {m.fileName}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+
+                          <input
+                            type="text"
+                            value={footerDraft.logoImage}
+                            onChange={(e) =>
+                              setFooterDraft({
+                                ...footerDraft,
+                                logoImage: e.target.value,
+                              })
+                            }
+                            placeholder="/lacigars-logo.png"
+                            className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between text-[11px] text-[#4a4238]">
+                            <span>Logo height</span>
+                            <span className="font-mono font-bold text-[#1a1714]">
+                              {footerDraft.logoHeight}px
+                            </span>
+                          </div>
+                          <input
+                            type="range"
+                            min={24}
+                            max={96}
+                            value={footerDraft.logoHeight}
+                            onChange={(e) =>
+                              setFooterDraft({
+                                ...footerDraft,
+                                logoHeight: Number(e.target.value),
+                              })
+                            }
+                            className="w-full accent-[#1a1714]"
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-1">
+                            <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
+                              Brand Line 1
+                            </label>
+                            <input
+                              type="text"
+                              value={footerDraft.brandLine1}
+                              onChange={(e) =>
+                                setFooterDraft({
+                                  ...footerDraft,
+                                  brandLine1: e.target.value,
+                                })
+                              }
+                              className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
+                              Brand Line 2
+                            </label>
+                            <input
+                              type="text"
+                              value={footerDraft.brandLine2}
+                              onChange={(e) =>
+                                setFooterDraft({
+                                  ...footerDraft,
+                                  brandLine2: e.target.value,
+                                })
+                              }
+                              className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
+                            Footer Description
+                          </label>
+                          <textarea
+                            rows={3}
+                            value={footerDraft.tagline}
+                            onChange={(e) =>
+                              setFooterDraft({
+                                ...footerDraft,
+                                tagline: e.target.value,
+                              })
+                            }
+                            className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
+                          />
+                        </div>
                       </div>
-                      <div className="space-y-1">
-                        <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
-                          Copyright Line
-                        </label>
-                        <input
-                          type="text"
-                          value={footerDraft.copyright}
-                          onChange={(e) =>
-                            setFooterDraft({
-                              ...footerDraft,
-                              copyright: e.target.value,
-                            })
-                          }
-                          className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
-                        />
+
+                      {/* 2. RIGHT CTA BLOCK */}
+                      <div className="space-y-3 pt-4 border-t border-[#ece8df]">
+                        <p className="text-xs font-bold text-[#1a1714]">
+                          Wholesale CTA Block
+                        </p>
+
+                        <div className="space-y-1">
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
+                            CTA Heading
+                          </label>
+                          <input
+                            type="text"
+                            value={footerDraft.ctaHeading}
+                            onChange={(e) =>
+                              setFooterDraft({
+                                ...footerDraft,
+                                ctaHeading: e.target.value,
+                              })
+                            }
+                            className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
+                            CTA Description
+                          </label>
+                          <textarea
+                            rows={3}
+                            value={footerDraft.ctaDescription}
+                            onChange={(e) =>
+                              setFooterDraft({
+                                ...footerDraft,
+                                ctaDescription: e.target.value,
+                              })
+                            }
+                            className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
+                            Button Label
+                          </label>
+                          <input
+                            type="text"
+                            value={footerDraft.ctaLabel}
+                            onChange={(e) =>
+                              setFooterDraft({
+                                ...footerDraft,
+                                ctaLabel: e.target.value,
+                              })
+                            }
+                            className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
+                            Button Link
+                          </label>
+                          <input
+                            type="text"
+                            value={footerDraft.ctaHref}
+                            onChange={(e) =>
+                              setFooterDraft({
+                                ...footerDraft,
+                                ctaHref: e.target.value,
+                              })
+                            }
+                            placeholder="/contact"
+                            className="w-full px-2.5 py-1.5 text-xs font-mono bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
+                          />
+                        </div>
                       </div>
-                      <div className="space-y-1">
-                        <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
-                          Contact Email
-                        </label>
-                        <input
-                          type="email"
-                          value={footerDraft.contactEmail}
-                          onChange={(e) =>
-                            setFooterDraft({
-                              ...footerDraft,
-                              contactEmail: e.target.value,
-                            })
-                          }
-                          className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
-                        />
+
+                      {/* 3. BOTTOM BAR */}
+                      <div className="space-y-3 pt-4 border-t border-[#ece8df]">
+                        <p className="text-xs font-bold text-[#1a1714]">
+                          Bottom Bar
+                        </p>
+
+                        <div className="space-y-1">
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
+                            Copyright Text (Left)
+                          </label>
+                          <input
+                            type="text"
+                            value={footerDraft.copyright}
+                            onChange={(e) =>
+                              setFooterDraft({
+                                ...footerDraft,
+                                copyright: e.target.value,
+                              })
+                            }
+                            className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
+                            License / Badge Text (Right)
+                          </label>
+                          <input
+                            type="text"
+                            value={footerDraft.bottomRightText}
+                            onChange={(e) =>
+                              setFooterDraft({
+                                ...footerDraft,
+                                bottomRightText: e.target.value,
+                              })
+                            }
+                            className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
+                          />
+                        </div>
+                      </div>
+
+                      {/* 4. COLORS */}
+                      <div className="space-y-3 pt-4 border-t border-[#ece8df]">
+                        <p className="text-xs font-bold text-[#1a1714]">
+                          Colors
+                        </p>
+
+                        {(
+                          [
+                            ["bgColor", "Footer Background"],
+                            ["textColor", "Text Color"],
+                            ["accentColor", "Accent / Button Color"],
+                          ] as const
+                        ).map(([key, label]) => (
+                          <div key={key} className="space-y-1">
+                            <label className="block text-[11px] text-[#4a4238]">
+                              {label}
+                            </label>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="color"
+                                value={footerDraft[key]}
+                                onChange={(e) =>
+                                  setFooterDraft({
+                                    ...footerDraft,
+                                    [key]: e.target.value,
+                                  })
+                                }
+                                className="h-7 w-9 rounded border border-[#dcd4c5] cursor-pointer bg-white p-0.5"
+                              />
+                              <input
+                                type="text"
+                                value={footerDraft[key]}
+                                onChange={(e) =>
+                                  setFooterDraft({
+                                    ...footerDraft,
+                                    [key]: e.target.value,
+                                  })
+                                }
+                                className="flex-1 px-2.5 py-1 text-xs font-mono bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
+                              />
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   </>
@@ -2531,7 +3143,7 @@ export default function AdminDashboardClient({
                           {selectedSection.key}
                         </p>
                         <h2 className="text-sm font-bold text-[#1a1714] truncate">
-                          {selectedSection.title}
+                          {formatSectionLabel(selectedSection)}
                         </h2>
                       </div>
 
@@ -2897,6 +3509,208 @@ export default function AdminDashboardClient({
                         )}
                       </div>
 
+                      {/* HERO 4 CARDS SETTINGS */}
+                      {selectedSection.type === "HERO_3D" && (
+                        <div className="space-y-3 pt-2 border-t border-[#f0ece3]">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-[#8c6d48]">
+                            Hero Cards (Background &amp; Overlay)
+                          </p>
+                          {(Array.isArray(parsedEditorObj.blocks) &&
+                          (parsedEditorObj.blocks as unknown[]).length > 0
+                            ? (parsedEditorObj.blocks as Array<
+                                Record<string, unknown>
+                              >)
+                            : INITIAL_HERO_CONFIG.blocks.map((b) => ({
+                                ...(b as unknown as Record<string, unknown>),
+                              }))
+                          ).map((blk, cardIdx, allBlocks) => {
+                            const patchCard = (
+                              patch: Record<string, unknown>
+                            ) => {
+                              const nextBlocks = allBlocks.map((item, i) =>
+                                i === cardIdx ? { ...item, ...patch } : item
+                              );
+                              updateNestedFields({ blocks: nextBlocks });
+                            };
+
+                            return (
+                              <div
+                                key={String(blk.id ?? cardIdx)}
+                                className="p-2.5 rounded-lg bg-[#faf8f4] border border-[#e5dfd3] space-y-2"
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-[11px] font-bold text-[#1a1714] uppercase">
+                                    {cardIdx + 1}. {String(blk.title ?? "Card")}
+                                  </span>
+                                  <div className="flex items-center gap-1">
+                                    {Boolean(blk.bgImage) && (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          patchCard({ bgImage: "" })
+                                        }
+                                        className="px-1.5 py-0.5 rounded bg-red-50 text-red-700 text-[10px] font-bold"
+                                      >
+                                        Clear
+                                      </button>
+                                    )}
+                                    <label className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#1a1714] hover:bg-[#8c6d48] text-white text-[10px] font-bold cursor-pointer">
+                                      <Upload className="w-2.5 h-2.5" />
+                                      Upload
+                                      <input
+                                        type="file"
+                                        accept="image/*"
+                                        disabled={uploadingImage}
+                                        onChange={(e) => {
+                                          const file = e.target.files?.[0];
+                                          if (file)
+                                            handleHeroCardBgUpload(
+                                              cardIdx,
+                                              file
+                                            );
+                                          e.target.value = "";
+                                        }}
+                                        className="hidden"
+                                      />
+                                    </label>
+                                  </div>
+                                </div>
+
+                                {mediaList.length > 0 && (
+                                  <select
+                                    value={
+                                      mediaList.some(
+                                        (m) => m.url === blk.bgImage
+                                      )
+                                        ? String(blk.bgImage)
+                                        : ""
+                                    }
+                                    onChange={(e) =>
+                                      patchCard({ bgImage: e.target.value })
+                                    }
+                                    className="w-full px-2 py-1 text-[11px] bg-white border border-[#dcd4c5] rounded"
+                                  >
+                                    <option value="">
+                                      -- Pick card bg from Files --
+                                    </option>
+                                    {mediaList.map((m) => (
+                                      <option key={m.id} value={m.url}>
+                                        {m.fileName}
+                                      </option>
+                                    ))}
+                                  </select>
+                                )}
+
+                                <input
+                                  type="text"
+                                  value={String(blk.bgImage ?? "")}
+                                  onChange={(e) =>
+                                    patchCard({ bgImage: e.target.value })
+                                  }
+                                  placeholder="Card background image URL..."
+                                  className="w-full px-2 py-1 text-[11px] bg-white border border-[#dcd4c5] rounded"
+                                />
+
+                                <div className="flex items-center justify-between pt-1">
+                                  <span className="text-[10px] font-semibold text-[#4a4238]">
+                                    Color Overlay
+                                  </span>
+                                  <label className="inline-flex items-center gap-1 text-[10px] font-bold cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={Boolean(
+                                        blk.overlayEnabled ?? false
+                                      )}
+                                      onChange={(e) =>
+                                        patchCard({
+                                          overlayEnabled: e.target.checked,
+                                        })
+                                      }
+                                      className="accent-[#8c6d48]"
+                                    />
+                                    {blk.overlayEnabled ? "ON" : "OFF"}
+                                  </label>
+                                </div>
+
+                                {Boolean(blk.overlayEnabled) && (
+                                  <div className="space-y-1.5">
+                                    <div className="flex items-center gap-1.5">
+                                      <input
+                                        type="color"
+                                        value={String(
+                                          blk.overlayColor || "#fcfbf9"
+                                        )}
+                                        onChange={(e) =>
+                                          patchCard({
+                                            overlayColor: e.target.value,
+                                          })
+                                        }
+                                        className="h-6 w-8 rounded border border-[#dcd4c5] cursor-pointer bg-white p-0.5"
+                                      />
+                                      <input
+                                        type="text"
+                                        value={String(
+                                          blk.overlayColor || "#fcfbf9"
+                                        )}
+                                        onChange={(e) =>
+                                          patchCard({
+                                            overlayColor: e.target.value,
+                                          })
+                                        }
+                                        className="flex-1 px-2 py-1 text-[11px] font-mono bg-white border border-[#dcd4c5] rounded"
+                                      />
+                                    </div>
+
+                                    <div className="grid grid-cols-3 gap-1">
+                                      {(["full", "left", "right"] as const).map(
+                                        (mode) => (
+                                          <button
+                                            key={mode}
+                                            type="button"
+                                            onClick={() =>
+                                              patchCard({ overlayType: mode })
+                                            }
+                                            className={`py-1 rounded text-[10px] font-bold capitalize border transition-colors ${
+                                              (blk.overlayType ?? "left") ===
+                                              mode
+                                                ? "bg-[#241307] text-white border-[#241307]"
+                                                : "bg-white text-[#4a4238] border-[#dcd4c5]"
+                                            }`}
+                                          >
+                                            {mode}
+                                          </button>
+                                        )
+                                      )}
+                                    </div>
+
+                                    <div className="space-y-0.5 pt-0.5">
+                                      <label className="block text-[10px] text-[#6b6256]">
+                                        Opacity (
+                                        {Number(blk.overlayOpacity ?? 80)}%)
+                                      </label>
+                                      <input
+                                        type="range"
+                                        min={0}
+                                        max={100}
+                                        value={Number(blk.overlayOpacity ?? 80)}
+                                        onChange={(e) =>
+                                          patchCard({
+                                            overlayOpacity: Number(
+                                              e.target.value
+                                            ),
+                                          })
+                                        }
+                                        className="w-full accent-[#8c6d48]"
+                                      />
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
                       {/* FEATURED PRODUCT EXTRA SETTINGS */}
                       {isFeaturedProduct && (
                         <div className="space-y-3 pt-2 border-t border-[#f0ece3]">
@@ -3181,208 +3995,6 @@ export default function AdminDashboardClient({
                         </div>
                       )}
 
-                      {/* HERO 4 CARDS SETTINGS (BG IMAGE + OVERLAY FULL/LEFT/RIGHT) */}
-                      {selectedSection.type === "HERO_3D" && (
-                        <div className="space-y-3 pt-2 border-t border-[#f0ece3]">
-                          <p className="text-[10px] font-bold uppercase tracking-wider text-[#8c6d48]">
-                            Hero Cards (Background &amp; Overlay)
-                          </p>
-                          {(Array.isArray(parsedEditorObj.blocks) &&
-                          (parsedEditorObj.blocks as unknown[]).length > 0
-                            ? (parsedEditorObj.blocks as Array<
-                                Record<string, unknown>
-                              >)
-                            : INITIAL_HERO_CONFIG.blocks.map((b) => ({
-                                ...(b as unknown as Record<string, unknown>),
-                              }))
-                          ).map((blk, cardIdx, allBlocks) => {
-                            const patchCard = (
-                              patch: Record<string, unknown>
-                            ) => {
-                              const nextBlocks = allBlocks.map((item, i) =>
-                                i === cardIdx ? { ...item, ...patch } : item
-                              );
-                              updateNestedFields({ blocks: nextBlocks });
-                            };
-
-                            return (
-                              <div
-                                key={String(blk.id ?? cardIdx)}
-                                className="p-2.5 rounded-lg bg-[#faf8f4] border border-[#e5dfd3] space-y-2"
-                              >
-                                <div className="flex items-center justify-between gap-2">
-                                  <span className="text-[11px] font-bold text-[#1a1714] uppercase">
-                                    {cardIdx + 1}. {String(blk.title ?? "Card")}
-                                  </span>
-                                  <div className="flex items-center gap-1">
-                                    {Boolean(blk.bgImage) && (
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          patchCard({ bgImage: "" })
-                                        }
-                                        className="px-1.5 py-0.5 rounded bg-red-50 text-red-700 text-[10px] font-bold"
-                                      >
-                                        Clear
-                                      </button>
-                                    )}
-                                    <label className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#1a1714] hover:bg-[#8c6d48] text-white text-[10px] font-bold cursor-pointer">
-                                      <Upload className="w-2.5 h-2.5" />
-                                      Upload
-                                      <input
-                                        type="file"
-                                        accept="image/*"
-                                        disabled={uploadingImage}
-                                        onChange={(e) => {
-                                          const file = e.target.files?.[0];
-                                          if (file)
-                                            handleHeroCardBgUpload(
-                                              cardIdx,
-                                              file
-                                            );
-                                          e.target.value = "";
-                                        }}
-                                        className="hidden"
-                                      />
-                                    </label>
-                                  </div>
-                                </div>
-
-                                {mediaList.length > 0 && (
-                                  <select
-                                    value={
-                                      mediaList.some(
-                                        (m) => m.url === blk.bgImage
-                                      )
-                                        ? String(blk.bgImage)
-                                        : ""
-                                    }
-                                    onChange={(e) =>
-                                      patchCard({ bgImage: e.target.value })
-                                    }
-                                    className="w-full px-2 py-1 text-[11px] bg-white border border-[#dcd4c5] rounded"
-                                  >
-                                    <option value="">
-                                      -- Pick card bg from Files --
-                                    </option>
-                                    {mediaList.map((m) => (
-                                      <option key={m.id} value={m.url}>
-                                        {m.fileName}
-                                      </option>
-                                    ))}
-                                  </select>
-                                )}
-
-                                <input
-                                  type="text"
-                                  value={String(blk.bgImage ?? "")}
-                                  onChange={(e) =>
-                                    patchCard({ bgImage: e.target.value })
-                                  }
-                                  placeholder="Card background image URL..."
-                                  className="w-full px-2 py-1 text-[11px] bg-white border border-[#dcd4c5] rounded"
-                                />
-
-                                <div className="flex items-center justify-between pt-1">
-                                  <span className="text-[10px] font-semibold text-[#4a4238]">
-                                    Color Overlay
-                                  </span>
-                                  <label className="inline-flex items-center gap-1 text-[10px] font-bold cursor-pointer">
-                                    <input
-                                      type="checkbox"
-                                      checked={Boolean(
-                                        blk.overlayEnabled ?? false
-                                      )}
-                                      onChange={(e) =>
-                                        patchCard({
-                                          overlayEnabled: e.target.checked,
-                                        })
-                                      }
-                                      className="accent-[#8c6d48]"
-                                    />
-                                    {blk.overlayEnabled ? "ON" : "OFF"}
-                                  </label>
-                                </div>
-
-                                {Boolean(blk.overlayEnabled) && (
-                                  <div className="space-y-1.5">
-                                    <div className="flex items-center gap-1.5">
-                                      <input
-                                        type="color"
-                                        value={String(
-                                          blk.overlayColor || "#fcfbf9"
-                                        )}
-                                        onChange={(e) =>
-                                          patchCard({
-                                            overlayColor: e.target.value,
-                                          })
-                                        }
-                                        className="h-6 w-8 rounded border border-[#dcd4c5] cursor-pointer bg-white p-0.5"
-                                      />
-                                      <input
-                                        type="text"
-                                        value={String(
-                                          blk.overlayColor || "#fcfbf9"
-                                        )}
-                                        onChange={(e) =>
-                                          patchCard({
-                                            overlayColor: e.target.value,
-                                          })
-                                        }
-                                        className="flex-1 px-2 py-1 text-[11px] font-mono bg-white border border-[#dcd4c5] rounded"
-                                      />
-                                    </div>
-
-                                    <div className="grid grid-cols-3 gap-1">
-                                      {(["full", "left", "right"] as const).map(
-                                        (mode) => (
-                                          <button
-                                            key={mode}
-                                            type="button"
-                                            onClick={() =>
-                                              patchCard({ overlayType: mode })
-                                            }
-                                            className={`py-1 rounded text-[10px] font-bold capitalize border transition-colors ${
-                                              (blk.overlayType ?? "left") ===
-                                              mode
-                                                ? "bg-[#241307] text-white border-[#241307]"
-                                                : "bg-white text-[#4a4238] border-[#dcd4c5]"
-                                            }`}
-                                          >
-                                            {mode}
-                                          </button>
-                                        )
-                                      )}
-                                    </div>
-
-                                    <div className="space-y-0.5 pt-0.5">
-                                      <label className="block text-[10px] text-[#6b6256]">
-                                        Opacity (
-                                        {Number(blk.overlayOpacity ?? 80)}%)
-                                      </label>
-                                      <input
-                                        type="range"
-                                        min={0}
-                                        max={100}
-                                        value={Number(blk.overlayOpacity ?? 80)}
-                                        onChange={(e) =>
-                                          patchCard({
-                                            overlayOpacity: Number(
-                                              e.target.value
-                                            ),
-                                          })
-                                        }
-                                        className="w-full accent-[#8c6d48]"
-                                      />
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-
                       {/* BRAND MARQUEE LOGO SIZE */}
                       {selectedSection.type === "BRAND_MARQUEE" && (
                         <div className="space-y-2 pt-2 border-t border-[#f0ece3]">
@@ -3409,16 +4021,16 @@ export default function AdminDashboardClient({
                               className="w-full accent-[#8c6d48]"
                             />
                             <p className="text-[10px] text-[#6b6256]">
-                              Ukuran teks, padding, dan tinggi pita marquee mengikuti ukuran logo.
+                              Ukuran teks, padding, dan tinggi pita marquee
+                              mengikuti ukuran logo.
                             </p>
                           </div>
                         </div>
                       )}
 
                       {/* COLLECTION SECTION SETTINGS (CARD STYLE + CARDS) */}
-                      {selectedSection.type === "COLLECTION_SECTION" && (
+                      {isCollectionSection && (
                         <div className="space-y-3 pt-2 border-t border-[#f0ece3]">
-                          {/* Card Style */}
                           <div className="space-y-2">
                             <p className="text-[10px] font-bold uppercase tracking-wider text-[#8c6d48]">
                               Card Style
@@ -3497,7 +4109,6 @@ export default function AdminDashboardClient({
                             </div>
                           </div>
 
-                          {/* Collection Cards List */}
                           {(() => {
                             const currentItems = Array.isArray(
                               parsedEditorObj.items
@@ -3534,6 +4145,7 @@ export default function AdminDashboardClient({
                                             "Short collection summary...",
                                           href: "/products",
                                           image: "",
+                                          onlyVisibleForCustomer: false,
                                         },
                                       ])
                                     }
@@ -3621,7 +4233,6 @@ export default function AdminDashboardClient({
                                         </div>
                                       </div>
 
-                                      {/* Quick Fill from Category / Collection */}
                                       {(categories.length > 0 ||
                                         collections.length > 0) && (
                                         <select
@@ -3752,7 +4363,6 @@ export default function AdminDashboardClient({
                                         />
                                       </div>
 
-                                      {/* Card Image */}
                                       <div className="space-y-1.5 pt-1 border-t border-[#ece8df]">
                                         <div className="flex items-center justify-between gap-2">
                                           <span className="text-[10px] font-semibold text-[#4a4238]">
@@ -3842,6 +4452,24 @@ export default function AdminDashboardClient({
                                           className="w-full px-2 py-1 text-[11px] bg-white border border-[#dcd4c5] rounded"
                                         />
                                       </div>
+
+                                      {/* Per-Card Customer Visibility */}
+                                      <label className="flex items-center justify-between gap-2 pt-1.5 border-t border-[#ece8df] text-[10px] font-semibold text-[#1a1714] cursor-pointer">
+                                        <span>Only visible for customer</span>
+                                        <input
+                                          type="checkbox"
+                                          checked={Boolean(
+                                            item.onlyVisibleForCustomer ?? false
+                                          )}
+                                          onChange={(e) =>
+                                            patchItem({
+                                              onlyVisibleForCustomer:
+                                                e.target.checked,
+                                            })
+                                          }
+                                          className="accent-[#8c6d48]"
+                                        />
+                                      </label>
                                     </div>
                                   );
                                 })}
@@ -3851,12 +4479,11 @@ export default function AdminDashboardClient({
                         </div>
                       )}
 
-                      {/* STORY & COLLECTION VISIBILITY SETTINGS */}
-                      {(selectedSection.type === "EDITORIAL_CATEGORIES" ||
-                        selectedSection.type === "COLLECTION_SECTION") && (
+                      {/* COLLECTION VISIBILITY ACCESS */}
+                      {isCollectionSection && (
                         <div className="space-y-2 pt-2 border-t border-[#f0ece3]">
                           <p className="text-[10px] font-bold uppercase tracking-wider text-[#8c6d48]">
-                            Visibility Access
+                            Visibility Access (Section)
                           </p>
                           <label className="flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg bg-[#fdfbf7] border border-[#dcd4c5] text-xs font-semibold text-[#1a1714] cursor-pointer">
                             <span>Only visible for customer</span>
@@ -3874,8 +4501,8 @@ export default function AdminDashboardClient({
                             />
                           </label>
                           <p className="text-[10px] text-[#6b6256]">
-                            Jika aktif, section hanya tampil untuk customer yang
-                            sudah login.
+                            Jika aktif, seluruh section hanya tampil untuk
+                            customer yang sudah login.
                           </p>
                         </div>
                       )}
@@ -3985,6 +4612,211 @@ export default function AdminDashboardClient({
                         </tbody>
                       </table>
                     </div>
+                  </div>
+                </div>
+              ) : activeTab === "customers" ? (
+                <div className="max-w-6xl mx-auto space-y-5">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {(
+                        [
+                          ["ALL", `All (${customers.length})`],
+                          [
+                            "PENDING",
+                            `Pending Approval (${pendingCustomersCount})`,
+                          ],
+                          [
+                            "INVITED",
+                            `Invited (${
+                              customers.filter((c) => c.status === "INVITED")
+                                .length
+                            })`,
+                          ],
+                          [
+                            "APPROVED",
+                            `Approved (${
+                              customers.filter((c) => c.status === "APPROVED")
+                                .length
+                            })`,
+                          ],
+                          [
+                            "REJECTED",
+                            `Rejected (${
+                              customers.filter(
+                                (c) =>
+                                  c.status === "REJECTED" ||
+                                  c.status === "SUSPENDED"
+                              ).length
+                            })`,
+                          ],
+                        ] as const
+                      ).map(([code, label]) => (
+                        <button
+                          key={code}
+                          type="button"
+                          onClick={() => setCustomerFilter(code)}
+                          className={`px-3 py-1.5 rounded-lg text-[11px] font-bold border transition-colors ${
+                            customerFilter === code
+                              ? "bg-[#241307] text-white border-[#241307]"
+                              : "bg-white text-[#4a4238] border-[#dcd4c5] hover:bg-[#faf8f4]"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <div className="relative w-full sm:w-64">
+                        <Search className="w-3.5 h-3.5 text-[#8c6d48] absolute left-3 top-1/2 -translate-y-1/2" />
+                        <input
+                          type="text"
+                          value={customerSearch}
+                          onChange={(e) => setCustomerSearch(e.target.value)}
+                          placeholder="Search company, email, license..."
+                          className="w-full pl-9 pr-3 py-2 text-xs bg-white border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowInviteModal(true)}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#1a1714] hover:bg-[#8c6d48] text-white text-xs font-bold whitespace-nowrap transition-colors"
+                      >
+                        <UserPlus className="w-3.5 h-3.5" />
+                        Invite New Customer
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="bg-white border border-[#e0dbd0] rounded-xl overflow-hidden shadow-xs">
+                    <div className="px-5 py-4 border-b border-[#ece8df] flex items-center justify-between">
+                      <h2 className="text-sm font-bold text-[#1a1714]">
+                        Wholesale Customers ({filteredCustomers.length})
+                      </h2>
+                    </div>
+
+                    {filteredCustomers.length === 0 ? (
+                      <div className="p-12 text-center text-xs text-[#6b6256]">
+                        Belum ada data customer untuk filter ini. Klik
+                        &ldquo;Invite New Customer&rdquo; untuk mengundang
+                        partner baru.
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse">
+                          <thead>
+                            <tr className="border-b border-[#ece8df] bg-[#faf8f4] text-[10px] uppercase tracking-wider text-[#6b6256]">
+                              <th className="py-3 px-4">Company / Contact</th>
+                              <th className="py-3 px-4">Email &amp; Phone</th>
+                              <th className="py-3 px-4">License / Tier</th>
+                              <th className="py-3 px-4">Status</th>
+                              <th className="py-3 px-4 text-right">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-[#f0ece3] text-xs">
+                            {filteredCustomers.map((cust) => (
+                              <tr
+                                key={cust.id}
+                                className="hover:bg-[#faf8f4] transition-colors"
+                              >
+                                <td className="py-3 px-4">
+                                  <p className="font-bold text-[#1a1714]">
+                                    {cust.companyName}
+                                  </p>
+                                  <p className="text-[11px] text-[#6b6256]">
+                                    {cust.contactName}
+                                  </p>
+                                </td>
+                                <td className="py-3 px-4">
+                                  <p className="text-[#1a1714]">
+                                    {cust.email || "—"}
+                                  </p>
+                                  {cust.phone && (
+                                    <p className="text-[10px] text-[#6b6256]">
+                                      {cust.phone}
+                                    </p>
+                                  )}
+                                </td>
+                                <td className="py-3 px-4">
+                                  <p className="font-mono text-[11px] text-[#4a4238]">
+                                    {cust.licenseNumber || "—"}
+                                  </p>
+                                  <p className="text-[10px] uppercase text-[#8c6d48] font-bold">
+                                    {cust.priceTier}
+                                  </p>
+                                </td>
+                                <td className="py-3 px-4">
+                                  <span
+                                    className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                                      cust.status === "APPROVED"
+                                        ? "bg-emerald-100 text-emerald-800"
+                                        : cust.status === "PENDING"
+                                        ? "bg-amber-100 text-amber-900"
+                                        : cust.status === "INVITED"
+                                        ? "bg-blue-100 text-blue-800"
+                                        : "bg-red-100 text-red-700"
+                                    }`}
+                                  >
+                                    {cust.status}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-4 text-right">
+                                  <div className="inline-flex items-center gap-1">
+                                    {cust.status !== "APPROVED" && (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          handleUpdateCustomerStatus(
+                                            cust,
+                                            "APPROVED"
+                                          )
+                                        }
+                                        className="inline-flex items-center gap-1 px-2 py-1 rounded bg-emerald-700 hover:bg-emerald-800 text-white text-[10px] font-bold"
+                                        title="Approve Customer"
+                                      >
+                                        <Check className="w-3 h-3" />
+                                        Approve
+                                      </button>
+                                    )}
+                                    {cust.status !== "REJECTED" && (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          handleUpdateCustomerStatus(
+                                            cust,
+                                            "REJECTED"
+                                          )
+                                        }
+                                        className="p-1.5 text-[#6b6256] hover:text-amber-700"
+                                        title="Reject / Suspend"
+                                      >
+                                        <Ban className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleCopyInviteLink(cust)}
+                                      className="p-1.5 text-[#6b6256] hover:text-[#1a1714]"
+                                      title="Copy Invite Link"
+                                    >
+                                      <Copy className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteCustomer(cust)}
+                                      className="p-1.5 text-[#6b6256] hover:text-red-600"
+                                      title="Delete Customer"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </div>
                 </div>
               ) : activeTab === "brands" ? (
@@ -4390,14 +5222,29 @@ export default function AdminDashboardClient({
                       />
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={openNewProductModal}
-                      className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg bg-[#1a1714] hover:bg-[#8c6d48] text-white text-xs font-bold transition-colors"
-                    >
-                      <Plus className="w-4 h-4" />
-                      Add Product
-                    </button>
+                    <div className="flex items-center gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setImportRows([]);
+                          setImportFileName("");
+                          setShowImportModal(true);
+                        }}
+                        className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-white hover:bg-[#faf8f4] text-[#1a1714] border border-[#cfc6b6] text-xs font-bold transition-colors"
+                      >
+                        <FileSpreadsheet className="w-4 h-4 text-emerald-700" />
+                        Import from Excel
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={openNewProductModal}
+                        className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg bg-[#1a1714] hover:bg-[#8c6d48] text-white text-xs font-bold transition-colors"
+                      >
+                        <Plus className="w-4 h-4" />
+                        Add Product
+                      </button>
+                    </div>
                   </div>
 
                   <div className="bg-white border border-[#e0dbd0] rounded-xl overflow-hidden shadow-xs">
@@ -4533,6 +5380,7 @@ export default function AdminDashboardClient({
         </main>
       </div>
 
+      {/* Product Modal */}
       {showProductModal && (
         <div
           onClick={() => setShowProductModal(false)}
@@ -4903,6 +5751,324 @@ export default function AdminDashboardClient({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Invite Customer Modal */}
+      {showInviteModal && (
+        <div
+          onClick={() => setShowInviteModal(false)}
+          className="fixed inset-0 bg-[#1a1714]/60 backdrop-blur-xs z-50 flex items-center justify-center p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white border border-[#e0dbd0] rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden"
+          >
+            <div className="px-6 py-4 border-b border-[#ece8df] flex items-center justify-between">
+              <h3 className="text-sm font-bold text-[#1a1714]">
+                Invite New Customer
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowInviteModal(false)}
+                className="text-[#6b6256] hover:text-[#1a1714]"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleInviteCustomer} className="p-6 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
+                    Company Name *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={inviteForm.companyName}
+                    onChange={(e) =>
+                      setInviteForm({
+                        ...inviteForm,
+                        companyName: e.target.value,
+                      })
+                    }
+                    placeholder="Sunshine Tobacco LLC"
+                    className="w-full px-3 py-2 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
+                    Contact Name *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={inviteForm.contactName}
+                    onChange={(e) =>
+                      setInviteForm({
+                        ...inviteForm,
+                        contactName: e.target.value,
+                      })
+                    }
+                    placeholder="John Perez"
+                    className="w-full px-3 py-2 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
+                    Business Email *
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    value={inviteForm.email}
+                    onChange={(e) =>
+                      setInviteForm({ ...inviteForm, email: e.target.value })
+                    }
+                    placeholder="buyer@retailer.com"
+                    className="w-full px-3 py-2 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
+                    Phone
+                  </label>
+                  <input
+                    type="text"
+                    value={inviteForm.phone}
+                    onChange={(e) =>
+                      setInviteForm({ ...inviteForm, phone: e.target.value })
+                    }
+                    placeholder="(305) 555-0192"
+                    className="w-full px-3 py-2 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
+                    License / Tax ID
+                  </label>
+                  <input
+                    type="text"
+                    value={inviteForm.licenseNumber}
+                    onChange={(e) =>
+                      setInviteForm({
+                        ...inviteForm,
+                        licenseNumber: e.target.value,
+                      })
+                    }
+                    placeholder="FL-TOB-8821"
+                    className="w-full px-3 py-2 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
+                    Price Tier
+                  </label>
+                  <select
+                    value={inviteForm.priceTier}
+                    onChange={(e) =>
+                      setInviteForm({
+                        ...inviteForm,
+                        priceTier: e.target.value,
+                      })
+                    }
+                    className="w-full px-3 py-2 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
+                  >
+                    <option value="STANDARD">Standard</option>
+                    <option value="PREFERRED">Preferred</option>
+                    <option value="DISTRIBUTOR">Distributor</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
+                    Initial Status
+                  </label>
+                  <select
+                    value={inviteForm.status}
+                    onChange={(e) =>
+                      setInviteForm({ ...inviteForm, status: e.target.value })
+                    }
+                    className="w-full px-3 py-2 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
+                  >
+                    <option value="INVITED">Invited</option>
+                    <option value="PENDING">Pending Approval</option>
+                    <option value="APPROVED">Approved Immediately</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
+                  Internal Notes / Terms
+                </label>
+                <textarea
+                  rows={2}
+                  value={inviteForm.notes}
+                  onChange={(e) =>
+                    setInviteForm({ ...inviteForm, notes: e.target.value })
+                  }
+                  placeholder="Account rep notes, credit terms, delivery route..."
+                  className="w-full px-3 py-2 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
+                />
+              </div>
+
+              <div className="pt-3 border-t border-[#ece8df] flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowInviteModal(false)}
+                  className="px-4 py-2 rounded-lg border border-[#dcd4c5] text-xs font-bold text-[#4a4238]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="inline-flex items-center gap-1.5 px-5 py-2 rounded-lg bg-[#1a1714] hover:bg-[#8c6d48] text-white text-xs font-bold disabled:opacity-50"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  {saving ? "Saving..." : "Send Invite"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Import from Excel Modal */}
+      {showImportModal && (
+        <div
+          onClick={() => setShowImportModal(false)}
+          className="fixed inset-0 bg-[#1a1714]/60 backdrop-blur-xs z-50 flex items-center justify-center p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white border border-[#e0dbd0] rounded-2xl max-w-2xl w-full shadow-2xl overflow-hidden"
+          >
+            <div className="px-6 py-4 border-b border-[#ece8df] flex items-center justify-between">
+              <h3 className="text-sm font-bold text-[#1a1714]">
+                Import Products from Excel (.xlsx / .xls / .csv)
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowImportModal(false)}
+                className="text-[#6b6256] hover:text-[#1a1714]"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-xl bg-[#faf8f4] border border-[#e5dfd3]">
+                <div className="space-y-0.5">
+                  <p className="font-bold text-[#1a1714]">
+                    Format Kolom Otomatis (Upsert by SKU)
+                  </p>
+                  <p className="text-[11px] text-[#6b6256]">
+                    SKU yang sudah ada akan diupdate; SKU baru &amp; kategori
+                    baru dibuat otomatis.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleDownloadExcelTemplate}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-[#cfc6b6] hover:bg-[#ebe8e1] text-[11px] font-bold text-[#1a1714]"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Download Template
+                </button>
+              </div>
+
+              <label className="flex flex-col items-center justify-center gap-2 p-6 rounded-xl border-2 border-dashed border-[#cfc6b6] bg-[#fdfbf7] hover:border-[#8c6d48] cursor-pointer transition-colors">
+                <FileSpreadsheet className="w-7 h-7 text-emerald-700" />
+                <span className="font-bold text-[#1a1714]">
+                  {importFileName ||
+                    "Klik untuk pilih file Excel (.xlsx, .xls, .csv)"}
+                </span>
+                <span className="text-[11px] text-[#6b6256]">
+                  Kolom wajib: SKU, Name (opsional: Category, Brand, Wholesale
+                  Price, QBO Price, Inventory, Origin, Shape, Box Info)
+                </span>
+                <input
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleExcelFileChange(file);
+                    e.target.value = "";
+                  }}
+                  className="hidden"
+                />
+              </label>
+
+              {importRows.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-[11px] font-bold text-[#1a1714]">
+                    Preview ({importRows.length} baris siap diimport):
+                  </p>
+                  <div className="max-h-48 overflow-auto border border-[#e5dfd3] rounded-lg">
+                    <table className="w-full text-left border-collapse text-[11px]">
+                      <thead>
+                        <tr className="bg-[#faf8f4] border-b border-[#ece8df] text-[#6b6256]">
+                          <th className="py-2 px-3">SKU</th>
+                          <th className="py-2 px-3">Name</th>
+                          <th className="py-2 px-3">Category</th>
+                          <th className="py-2 px-3">Wholesale</th>
+                          <th className="py-2 px-3">Qty</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#f0ece3]">
+                        {importRows.slice(0, 8).map((r, idx) => (
+                          <tr key={`${r.sku}-${idx}`}>
+                            <td className="py-1.5 px-3 font-mono">{r.sku}</td>
+                            <td className="py-1.5 px-3 truncate max-w-44">
+                              {r.name}
+                            </td>
+                            <td className="py-1.5 px-3">
+                              {r.category || "Uncategorized"}
+                            </td>
+                            <td className="py-1.5 px-3">
+                              {r.wholesalePrice ? `$${r.wholesalePrice}` : "—"}
+                            </td>
+                            <td className="py-1.5 px-3">
+                              {r.qboQtyOnHand || "0"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              <div className="pt-3 border-t border-[#ece8df] flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowImportModal(false)}
+                  className="px-4 py-2 rounded-lg border border-[#dcd4c5] text-xs font-bold text-[#4a4238]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={importRows.length === 0 || importingExcel}
+                  onClick={handleConfirmExcelImport}
+                  className="inline-flex items-center gap-1.5 px-5 py-2 rounded-lg bg-[#1a1714] hover:bg-[#8c6d48] text-white text-xs font-bold disabled:opacity-40"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  {importingExcel
+                    ? "Importing..."
+                    : `Import ${importRows.length} Products`}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

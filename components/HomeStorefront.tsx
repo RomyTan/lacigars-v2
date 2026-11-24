@@ -9,8 +9,10 @@ import {
   KeyRound,
   Sparkles,
   ArrowRight,
+  Lock,
 } from "lucide-react";
 import { HeroClouds } from "@/components/HeroClouds";
+import { useStorefront } from "@/components/StorefrontShell";
 import { INITIAL_HERO_CONFIG } from "@/lib/storefront-data";
 import type { LiveBrand, LiveCmsSection } from "@/lib/cms-server";
 import { EditorialBannerSection } from "@/components/sections/EditorialBannerSection";
@@ -47,6 +49,7 @@ interface CollectionCardItem {
   description: string;
   href: string;
   image?: string;
+  onlyVisibleForCustomer?: boolean;
 }
 
 const DEFAULT_COLLECTION_ITEMS: CollectionCardItem[] = [
@@ -229,214 +232,216 @@ function renderSectionShell(
   );
 }
 
-function StorySection({ content }: { content?: Record<string, unknown> }) {
-  const c = content ?? {};
-  const heading =
-    typeof c.heading === "string" && c.heading.trim()
-      ? c.heading.trim()
-      : "A legacy of reliable wholesale distribution.";
-  const headingSize = Number(c.headingSize ?? 48);
-  const headingStyleClass = getHeadingStyleClass(c.headingStyle);
-  const textColor =
-    typeof c.textColor === "string" && c.textColor.trim()
-      ? c.textColor.trim()
-      : undefined;
+function normalizeCollectionCopy(c: Record<string, unknown>) {
+  const nested =
+    c.collectionSection && typeof c.collectionSection === "object"
+      ? (c.collectionSection as Record<string, unknown>)
+      : {};
 
-  const showDivider = Boolean(c.showDivider);
-  const dividerWidth = Number(c.dividerWidth ?? 100);
-  const dividerThickness = Number(c.dividerThickness ?? 1);
+  const rawHeading = typeof c.heading === "string" ? c.heading.trim() : "";
+  const isLegacyHeading =
+    !rawHeading ||
+    rawHeading.toLowerCase() === "a legacy of reliable wholesale distribution.";
 
-  const ctaLabel =
-    typeof c.ctaLabel === "string" && c.ctaLabel.trim()
-      ? c.ctaLabel.trim()
-      : "OUR STORY";
-  const ctaHref =
-    typeof c.ctaHref === "string" && c.ctaHref.trim()
-      ? c.ctaHref.trim()
-      : "/company";
-  const paragraph1 =
-    typeof c.paragraph1 === "string" && c.paragraph1.trim()
-      ? c.paragraph1.trim()
-      : "Based in Florida, Latin American Cigars Corp. is more than a tobacco distributor. We bridge world-class cigar manufacturers and retail storefronts with consistent inventory, transparent terms, and disciplined logistics.";
-  const paragraph2 =
-    typeof c.paragraph2 === "string" && c.paragraph2.trim()
-      ? c.paragraph2.trim()
-      : "From flagship hand-rolled humidors to high-turnover vapes and accessories, every SKU in our portfolio is curated to maximize your shelf velocity and retail margin.";
+  const rawCtaLabel = typeof c.ctaLabel === "string" ? c.ctaLabel.trim() : "";
+  const isLegacyCta =
+    !rawCtaLabel || rawCtaLabel.toLowerCase() === "our story";
 
-  return (
-    <section className="w-full bg-transparent py-20 md:py-24 px-6 md:px-10">
-      <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-16 items-start">
-        <div className="lg:col-span-5 flex flex-col items-start">
-          <h2
-            style={{
-              fontSize: `${headingSize}px`,
-              ...(textColor ? { color: textColor } : {}),
-            }}
-            className={`font-serif tracking-tight leading-[1.08] ${headingStyleClass}`}
-          >
-            {heading}
-          </h2>
+  const rawCtaHref = typeof c.ctaHref === "string" ? c.ctaHref.trim() : "";
+  const isLegacyHref = !rawCtaHref || rawCtaHref === "/company";
 
-          {showDivider && (
-            <div className="w-full pt-4">
-              <div
-                style={{
-                  width: `${dividerWidth}%`,
-                  height: `${dividerThickness}px`,
-                  ...(textColor ? { backgroundColor: textColor } : {}),
-                }}
-                className={!textColor ? "bg-current opacity-35" : "opacity-60"}
-              />
-            </div>
-          )}
+  const rawP1 = typeof c.paragraph1 === "string" ? c.paragraph1.trim() : "";
+  const isLegacyP1 =
+    !rawP1 || rawP1.startsWith("Based in Florida, Latin American Cigars Corp.");
 
-          <div className="pt-6">
-            <Link
-              href={ctaHref}
-              style={
-                textColor
-                  ? { color: textColor, borderColor: textColor }
-                  : undefined
-              }
-              className="inline-flex items-center gap-2.5 px-6 py-2.5 rounded-full border border-current text-[10px] font-bold tracking-[0.18em] uppercase transition-opacity hover:opacity-75"
-            >
-              <span>{ctaLabel}</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
-          </div>
-        </div>
+  const rawP2 = typeof c.paragraph2 === "string" ? c.paragraph2.trim() : "";
+  const isLegacyP2 =
+    !rawP2 || rawP2.startsWith("From flagship hand-rolled humidors");
 
-        <div className="lg:col-span-7 space-y-5 text-sm md:text-base leading-relaxed opacity-85">
-          <p>{paragraph1}</p>
-          {paragraph2 && <p>{paragraph2}</p>}
-        </div>
-      </div>
-    </section>
-  );
+  const rawItems = Array.isArray(c.items)
+    ? (c.items as CollectionCardItem[])
+    : Array.isArray(nested.items)
+    ? (nested.items as CollectionCardItem[])
+    : DEFAULT_COLLECTION_ITEMS;
+
+  return {
+    heading: isLegacyHeading
+      ? "Curated wholesale collections built for retail velocity."
+      : rawHeading,
+    headingSize: Number(c.headingSize ?? 48),
+    headingStyleClass: getHeadingStyleClass(c.headingStyle),
+    textColor:
+      typeof c.textColor === "string" && c.textColor.trim()
+        ? c.textColor.trim()
+        : undefined,
+    showDivider: Boolean(c.showDivider),
+    dividerWidth: Math.min(100, Math.max(10, Number(c.dividerWidth ?? 100))),
+    dividerThickness: Math.min(
+      10,
+      Math.max(1, Number(c.dividerThickness ?? 1))
+    ),
+    ctaLabel: isLegacyCta ? "OUR COLLECTION" : rawCtaLabel,
+    ctaHref: isLegacyHref ? "/products" : rawCtaHref,
+    paragraph1: isLegacyP1
+      ? "Explore our core wholesale categories curated specifically for licensed tobacconists, smoke shops, and retail lounges across Florida. Every line is selected for consistent availability and strong shelf turn."
+      : rawP1,
+    paragraph2: isLegacyP2
+      ? "From hand-rolled premium cigars and high-demand cigarette cartons to compliant vape displays and humidor accessories, stock your entire storefront through one dependable distributor."
+      : rawP2,
+    cardRadius: Math.min(
+      32,
+      Math.max(0, Number(c.cardRadius ?? nested.cardRadius ?? 16))
+    ),
+    cardBorder:
+      c.cardBorder !== undefined
+        ? Boolean(c.cardBorder)
+        : nested.cardBorder !== undefined
+        ? Boolean(nested.cardBorder)
+        : true,
+    cardBorderColor:
+      typeof (c.cardBorderColor ?? nested.cardBorderColor) === "string" &&
+      String(c.cardBorderColor ?? nested.cardBorderColor).trim()
+        ? String(c.cardBorderColor ?? nested.cardBorderColor).trim()
+        : "#e5dfd3",
+    cardShadow: String(c.cardShadow ?? nested.cardShadow ?? "sm"),
+    rawItems,
+  };
 }
 
 function CollectionSection({
   content,
+  canViewCustomerOnly,
+  isInPreviewIframe,
 }: {
   content?: Record<string, unknown>;
+  canViewCustomerOnly: boolean;
+  isInPreviewIframe: boolean;
 }) {
-  const c = content ?? {};
-  const heading =
-    typeof c.heading === "string" && c.heading.trim() ? c.heading.trim() : "";
-  const headingSize = Number(c.headingSize ?? 36);
-  const headingStyleClass = getHeadingStyleClass(c.headingStyle);
-  const textColor =
-    typeof c.textColor === "string" && c.textColor.trim()
-      ? c.textColor.trim()
-      : undefined;
-
-  const showDivider = Boolean(c.showDivider);
-  const dividerWidth = Math.min(100, Math.max(10, Number(c.dividerWidth ?? 100)));
-  const dividerThickness = Math.min(
-    10,
-    Math.max(1, Number(c.dividerThickness ?? 1))
-  );
-
-  const cardRadius = Math.min(32, Math.max(0, Number(c.cardRadius ?? 16)));
-  const cardBorder = c.cardBorder !== undefined ? Boolean(c.cardBorder) : true;
-  const cardBorderColor =
-    typeof c.cardBorderColor === "string" && c.cardBorderColor.trim()
-      ? c.cardBorderColor.trim()
-      : "#e5dfd3";
-  const cardShadow = String(c.cardShadow ?? "sm");
+  const cfg = normalizeCollectionCopy(content ?? {});
   const shadowClass =
-    cardShadow === "none"
+    cfg.cardShadow === "none"
       ? "shadow-none"
-      : cardShadow === "lg"
+      : cfg.cardShadow === "lg"
       ? "shadow-lg"
-      : cardShadow === "md"
+      : cfg.cardShadow === "md"
       ? "shadow-md"
       : "shadow-xs";
 
-  const items: CollectionCardItem[] = Array.isArray(c.items)
-    ? (c.items as CollectionCardItem[])
-    : DEFAULT_COLLECTION_ITEMS;
+  const visibleItems = cfg.rawItems.filter(
+    (item) => !item.onlyVisibleForCustomer || canViewCustomerOnly
+  );
 
   return (
-    <section className="w-full bg-transparent py-14 md:py-20 px-6 md:px-10">
-      <div className="max-w-7xl mx-auto flex flex-col gap-8">
-        {(heading || showDivider) && (
-          <div className="flex flex-col items-center text-center gap-4">
-            {heading && (
-              <h2
-                style={{
-                  fontSize: `${headingSize}px`,
-                  ...(textColor ? { color: textColor } : {}),
-                }}
-                className={`font-serif leading-tight text-center ${headingStyleClass}`}
-              >
-                {heading}
-              </h2>
-            )}
-            {showDivider && (
-              <div className="w-full flex justify-center">
+    <section className="w-full bg-transparent py-20 md:py-24 px-6 md:px-10">
+      <div className="max-w-7xl mx-auto flex flex-col gap-14">
+        {/* Top Intro Row */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-16 items-start">
+          <div className="lg:col-span-5 flex flex-col items-start">
+            <h2
+              style={{
+                fontSize: `${cfg.headingSize}px`,
+                ...(cfg.textColor ? { color: cfg.textColor } : {}),
+              }}
+              className={`font-serif tracking-tight leading-[1.08] ${cfg.headingStyleClass}`}
+            >
+              {cfg.heading}
+            </h2>
+
+            {cfg.showDivider && (
+              <div className="w-full pt-4">
                 <div
                   style={{
-                    width: `${dividerWidth}%`,
-                    height: `${dividerThickness}px`,
-                    ...(textColor ? { backgroundColor: textColor } : {}),
+                    width: `${cfg.dividerWidth}%`,
+                    height: `${cfg.dividerThickness}px`,
+                    ...(cfg.textColor ? { backgroundColor: cfg.textColor } : {}),
                   }}
-                  className={textColor ? "opacity-50" : "bg-current opacity-30"}
+                  className={
+                    !cfg.textColor ? "bg-current opacity-35" : "opacity-60"
+                  }
                 />
               </div>
             )}
+
+            <div className="pt-6">
+              <Link
+                href={cfg.ctaHref}
+                style={
+                  cfg.textColor
+                    ? { color: cfg.textColor, borderColor: cfg.textColor }
+                    : undefined
+                }
+                className="inline-flex items-center gap-2.5 px-6 py-2.5 rounded-full border border-current text-[10px] font-bold tracking-[0.18em] uppercase transition-opacity hover:opacity-75"
+              >
+                <span>{cfg.ctaLabel}</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
           </div>
-        )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-          {items.map((item) => (
-            <Link
-              key={item.id}
-              href={item.href || "/products"}
-              style={{
-                borderRadius: `${cardRadius}px`,
-                ...(cardBorder
-                  ? { borderWidth: "1px", borderColor: cardBorderColor }
-                  : { borderWidth: "0px" }),
-              }}
-              className={`group bg-white overflow-hidden flex flex-col justify-between ${shadowClass} hover:shadow-md transition-all text-[#1a1714]`}
-            >
-              <div className="relative h-56 w-full bg-linear-to-b from-[#edeae4] via-[#e3dfd6] to-[#9b968d] overflow-hidden">
-                {item.image ? (
-                  <img
-                    src={item.image}
-                    alt={item.title}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                  />
-                ) : (
-                  <span className="absolute top-3 left-3 text-xs font-medium text-[#2b2621]/80">
-                    {item.title}
-                  </span>
-                )}
-              </div>
+          <div className="lg:col-span-7 space-y-5 text-sm md:text-base leading-relaxed opacity-85">
+            <p>{cfg.paragraph1}</p>
+            {cfg.paragraph2 && <p>{cfg.paragraph2}</p>}
+          </div>
+        </div>
 
-              <div className="p-5 flex items-end justify-between gap-3">
-                <div className="min-w-0 space-y-1">
-                  <h3 className="font-serif font-bold text-base leading-snug text-[#1a1714]">
-                    {item.title}{" "}
-                    {item.count && (
-                      <sup className="text-[10px] font-sans font-semibold text-[#8c6d48]">
-                        {item.count}
-                      </sup>
-                    )}
-                  </h3>
-                  <p className="text-[11px] text-[#6b6256] truncate">
-                    {item.description}
-                  </p>
+        {/* 4-Column Collection Cards */}
+        {visibleItems.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+            {visibleItems.map((item) => (
+              <Link
+                key={item.id}
+                href={item.href || "/products"}
+                style={{
+                  borderRadius: `${cfg.cardRadius}px`,
+                  ...(cfg.cardBorder
+                    ? { borderWidth: "1px", borderColor: cfg.cardBorderColor }
+                    : { borderWidth: "0px" }),
+                }}
+                className={`group bg-white overflow-hidden flex flex-col justify-between ${shadowClass} hover:shadow-md transition-all text-[#1a1714]`}
+              >
+                <div className="relative h-56 w-full bg-linear-to-b from-[#edeae4] via-[#e3dfd6] to-[#9b968d] overflow-hidden">
+                  {isInPreviewIframe && item.onlyVisibleForCustomer && (
+                    <span className="absolute top-2.5 right-2.5 z-10 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#1a1714]/85 text-[#F8B93C] text-[9px] font-bold uppercase tracking-wider">
+                      <Lock className="w-2.5 h-2.5" />
+                      Customer Only
+                    </span>
+                  )}
+                  {item.image ? (
+                    <img
+                      src={item.image}
+                      alt={item.title}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    />
+                  ) : (
+                    <span className="absolute top-3 left-3 text-xs font-medium text-[#2b2621]/80">
+                      {item.title}
+                    </span>
+                  )}
                 </div>
 
-                <span className="w-8 h-8 rounded-full border border-[#dcd4c5] flex items-center justify-center shrink-0 text-[#1a1714] group-hover:bg-[#1a1714] group-hover:text-white transition-colors">
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </span>
-              </div>
-            </Link>
-          ))}
-        </div>
+                <div className="p-5 flex items-end justify-between gap-3">
+                  <div className="min-w-0 space-y-1">
+                    <h3 className="font-serif font-bold text-base leading-snug text-[#1a1714]">
+                      {item.title}{" "}
+                      {item.count && (
+                        <sup className="text-[10px] font-sans font-semibold text-[#8c6d48]">
+                          {item.count}
+                        </sup>
+                      )}
+                    </h3>
+                    <p className="text-[11px] text-[#6b6256] truncate">
+                      {item.description}
+                    </p>
+                  </div>
+
+                  <span className="w-8 h-8 rounded-full border border-[#dcd4c5] flex items-center justify-center shrink-0 text-[#1a1714] group-hover:bg-[#1a1714] group-hover:text-white transition-colors">
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
       </div>
     </section>
   );
@@ -516,18 +521,23 @@ export function HomeStorefront({
   brands,
   isCustomerLoggedIn = false,
 }: HomeStorefrontProps) {
+  const { partnerState } = useStorefront();
   const [sections, setSections] = useState<LiveCmsSection[]>(initialSections);
   const [selectedSectionId, setSelectedSectionId] = useState<
     number | string | null
   >(null);
   const [isInPreviewIframe, setIsInPreviewIframe] = useState(false);
+  const [liveFooterDraft, setLiveFooterDraft] = useState<Record<
+    string,
+    unknown
+  > | null>(null);
 
   useEffect(() => {
     setSections(initialSections);
   }, [initialSections]);
 
   useEffect(() => {
-    setIsInPreviewIframe(window.parent && window.parent !== window);
+    setIsInPreviewIframe(Boolean(window.parent && window.parent !== window));
 
     const onMessage = (event: MessageEvent) => {
       const data = event.data;
@@ -543,6 +553,10 @@ export function HomeStorefront({
 
       if (data.selectedSectionId !== undefined) {
         setSelectedSectionId(data.selectedSectionId);
+      }
+
+      if (data.footerDraft && typeof data.footerDraft === "object") {
+        setLiveFooterDraft(data.footerDraft as Record<string, unknown>);
       }
 
       const targetIndex =
@@ -582,42 +596,13 @@ export function HomeStorefront({
     return () => window.removeEventListener("message", onMessage);
   }, []);
 
-  const resolvedSections = useMemo(() => {
-    const hasCollectionRow = sections.some(
-      (s) => s.type === "COLLECTION_SECTION"
-    );
-    if (hasCollectionRow) return sections;
+  const resolvedSections = useMemo(() => sections, [sections]);
 
-    const list: LiveCmsSection[] = [];
-    for (const sec of sections) {
-      list.push(sec);
-      if (sec.type === "EDITORIAL_CATEGORIES") {
-        const storyContent = (sec.content ?? {}) as Record<string, unknown>;
-        const colContent =
-          storyContent.collectionSection &&
-          typeof storyContent.collectionSection === "object"
-            ? (storyContent.collectionSection as Record<string, unknown>)
-            : {};
-        const colActive =
-          storyContent.collectionEnabled !== undefined
-            ? Boolean(storyContent.collectionEnabled)
-            : true;
+  const canViewCustomerOnly =
+    isCustomerLoggedIn ||
+    partnerState === "APPROVED_PARTNER" ||
+    isInPreviewIframe;
 
-        list.push({
-          id: -100,
-          key: "home-collection-section",
-          type: "COLLECTION_SECTION",
-          title: "Collection Section",
-          content: colContent,
-          sortOrder: (sec.sortOrder ?? 0) + 0.5,
-          isActive: colActive,
-        });
-      }
-    }
-    return list;
-  }, [sections]);
-
-  const canViewCustomerOnly = isCustomerLoggedIn || isInPreviewIframe;
   const hasHero = resolvedSections.some(
     (s) => s.type === "HERO_3D" && s.isActive
   );
@@ -669,7 +654,7 @@ export function HomeStorefront({
             const rawBlocks: HeroCardBlock[] =
               Array.isArray(contentObj.blocks) && contentObj.blocks.length > 0
                 ? (contentObj.blocks as HeroCardBlock[])
-                : (INITIAL_HERO_CONFIG.blocks as HeroCardBlock[]);
+                : (INITIAL_HERO_CONFIG.blocks as unknown as HeroCardBlock[]);
 
             const hasCustomHeading =
               typeof contentObj.heading === "string" &&
@@ -682,7 +667,7 @@ export function HomeStorefront({
 
             return wrapSection(
               renderSectionShell(
-                section.content,
+                contentObj,
                 <section
                   id="home"
                   className="relative min-h-screen w-full flex flex-col justify-center items-center px-6 md:px-8 py-20 z-10"
@@ -867,36 +852,29 @@ export function HomeStorefront({
           }
 
           case "EDITORIAL_CATEGORIES":
-            return wrapSection(
-              renderSectionShell(
-                section.content,
-                <StorySection content={section.content} />,
-                { suppressTopDivider: true }
-              )
-            );
-
           case "COLLECTION_SECTION":
             return wrapSection(
               renderSectionShell(
-                section.content,
-                <CollectionSection content={section.content} />,
+                contentObj,
+                <CollectionSection
+                  content={contentObj}
+                  canViewCustomerOnly={canViewCustomerOnly}
+                  isInPreviewIframe={isInPreviewIframe}
+                />,
                 { suppressTopDivider: true }
               )
             );
 
           case "EDITORIAL_BANNER":
             return wrapSection(
-              renderSectionShell(
-                section.content,
-                <EditorialBannerSection />
-              )
+              renderSectionShell(contentObj, <EditorialBannerSection />)
             );
 
           case "FEATURED_PRODUCT":
             return wrapSection(
               renderSectionShell(
-                section.content,
-                <FeaturedProductSection content={section.content} />,
+                contentObj,
+                <FeaturedProductSection content={contentObj} />,
                 { suppressTopDivider: true }
               )
             );
@@ -904,8 +882,8 @@ export function HomeStorefront({
           case "BEST_SELLERS":
             return wrapSection(
               renderSectionShell(
-                section.content,
-                <BestSellersSection content={section.content} />,
+                contentObj,
+                <BestSellersSection content={contentObj} />,
                 { suppressTopDivider: true }
               )
             );
@@ -913,11 +891,11 @@ export function HomeStorefront({
           case "BRAND_MARQUEE":
             return wrapSection(
               renderSectionShell(
-                section.content,
+                contentObj,
                 <BrandMarqueeSection
                   brands={brands}
                   content={
-                    section.content as {
+                    contentObj as {
                       eyebrow?: string;
                       heading?: string;
                       headingSize?: number;
@@ -940,13 +918,21 @@ export function HomeStorefront({
           case "PARTNER_CTA":
             return wrapSection(
               renderSectionShell(
-                section.content,
-                <PartnerSection content={section.content} />
+                contentObj,
+                <PartnerSection content={contentObj} />
               )
             );
 
           case "FOOTER":
-            return wrapSection(<FooterSection />, true);
+            return wrapSection(
+              <FooterSection
+                content={{
+                  ...contentObj,
+                  ...(liveFooterDraft ?? {}),
+                }}
+              />,
+              true
+            );
 
           default:
             return null;
