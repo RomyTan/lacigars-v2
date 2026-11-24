@@ -21,14 +21,11 @@ interface FeaturedProductContent {
   heading?: string;
   headingSize?: number;
   headingStyle?: "regular" | "bold" | "italic" | "bold-italic" | string;
+  textColor?: string;
   showDivider?: boolean;
   dividerWidth?: number;
+  dividerThickness?: number;
   images?: string[];
-  bgColor?: string;
-  bgImage?: string;
-  overlayEnabled?: boolean;
-  overlayColor?: string;
-  overlayOpacity?: number;
   productSnapshot?: ProductSnapshot | null;
 }
 
@@ -42,7 +39,9 @@ export function FeaturedProductSection({
 
   const gallery =
     Array.isArray(cfg.images) && cfg.images.length > 0
-      ? cfg.images.filter((u): u is string => typeof u === "string" && u.trim() !== "")
+      ? cfg.images.filter(
+          (u): u is string => typeof u === "string" && u.trim() !== ""
+        )
       : prod?.image
       ? [prod.image]
       : [];
@@ -66,60 +65,58 @@ export function FeaturedProductSection({
       ? "font-bold italic"
       : "font-bold not-italic";
 
-  const bgColor = cfg.bgColor?.trim() || "#fdfbf7";
-  const bgImage = cfg.bgImage?.trim() || "";
-  const overlayEnabled = Boolean(cfg.overlayEnabled);
-  const overlayColor = cfg.overlayColor?.trim() || "#000000";
-  const overlayOpacity = Math.min(
+  const headingSize = Math.min(84, Math.max(14, Number(cfg.headingSize ?? 36)));
+  const textColor =
+    typeof cfg.textColor === "string" && cfg.textColor.trim()
+      ? cfg.textColor.trim()
+      : undefined;
+
+  const showDivider = Boolean(cfg.showDivider);
+  const dividerWidth = Math.min(
     100,
-    Math.max(0, Number(cfg.overlayOpacity ?? 40))
+    Math.max(10, Number(cfg.dividerWidth ?? 100))
+  );
+  const dividerThickness = Math.min(
+    10,
+    Math.max(1, Number(cfg.dividerThickness ?? 1))
   );
 
   return (
     <section
-      className="relative z-10 py-16 px-6 md:px-10 text-[#1a1714] overflow-hidden bg-cover bg-center"
-      style={{
-        backgroundColor: bgColor,
-        ...(bgImage ? { backgroundImage: `url('${bgImage}')` } : {}),
-      }}
+      className="relative z-10 py-16 px-6 md:px-10 bg-transparent overflow-hidden"
+      style={textColor ? { color: textColor } : undefined}
     >
-      {/* Optional Color Overlay */}
-      {overlayEnabled && (
-        <div
-          className="absolute inset-0 pointer-events-none z-0"
-          style={{
-            backgroundColor: overlayColor,
-            opacity: overlayOpacity / 100,
-          }}
-        />
-      )}
+      <div className="relative z-10 max-w-6xl mx-auto flex flex-col gap-8">
+        {(cfg.heading || showDivider) && (
+          <div className="flex flex-col items-center text-center gap-4">
+            {cfg.heading && (
+              <h2
+                style={{
+                  fontSize: `${headingSize}px`,
+                  ...(textColor ? { color: textColor } : {}),
+                }}
+                className={`font-serif leading-tight ${
+                  !textColor ? "text-[#1a1714]" : ""
+                } ${headingStyleClass}`}
+              >
+                {cfg.heading}
+              </h2>
+            )}
 
-      <div className="relative z-10 max-w-6xl mx-auto">
-        {cfg.heading && (
-          <div className="mb-8 text-center">
-            <h2
-              style={{ fontSize: `${cfg.headingSize ?? 32}px` }}
-              className={`font-serif text-[#1a1714] leading-tight ${headingStyleClass}`}
-            >
-              {cfg.heading}
-            </h2>
-            {cfg.showDivider && (
-              <div className="mt-4 flex justify-center">
+            {showDivider && (
+              <div className="w-full flex justify-center">
                 <div
-                  style={{ width: `${cfg.dividerWidth ?? 100}%` }}
-                  className="h-px bg-[#d6cfc2]"
+                  style={{
+                    width: `${dividerWidth}%`,
+                    height: `${dividerThickness}px`,
+                    ...(textColor ? { backgroundColor: textColor } : {}),
+                  }}
+                  className={
+                    textColor ? "opacity-45" : "bg-[#d6cfc2]"
+                  }
                 />
               </div>
             )}
-          </div>
-        )}
-
-        {!cfg.heading && cfg.showDivider && (
-          <div className="mb-8 flex justify-center">
-            <div
-              style={{ width: `${cfg.dividerWidth ?? 100}%` }}
-              className="h-px bg-[#d6cfc2]"
-            />
           </div>
         )}
 
@@ -179,29 +176,44 @@ export function FeaturedProductSection({
           <div
             className={
               gallery.length > 0
-                ? "lg:col-span-6 space-y-4"
-                : "max-w-2xl mx-auto space-y-4"
+                ? "lg:col-span-6 flex flex-col gap-4"
+                : "max-w-2xl mx-auto w-full flex flex-col gap-4"
             }
           >
             {gallery.length === 0 && cfg.badge && (
-              <span className="inline-block px-3 py-1 rounded-full bg-[#1a1714] text-[#F8B93C] text-[10px] font-bold uppercase tracking-wider">
-                {cfg.badge}
-              </span>
+              <div>
+                <span className="inline-block px-3 py-1 rounded-full bg-[#1a1714] text-[#F8B93C] text-[10px] font-bold uppercase tracking-wider">
+                  {cfg.badge}
+                </span>
+              </div>
             )}
 
             <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#8c6d48]">
               {prod?.brand || "EL BACÁN"} · SKU {prod?.sku || "LAC-ELB-001"}
             </p>
 
-            <h3 className="text-3xl font-sans font-bold tracking-tight text-[#1a1714]">
+            <h3
+              style={textColor ? { color: textColor } : undefined}
+              className={`text-3xl font-sans font-bold tracking-tight ${
+                !textColor ? "text-[#1a1714]" : ""
+              }`}
+            >
               {prod?.name || "El Bacán Reserve Robusto"}
             </h3>
 
-            <p className="text-xs text-[#6b6256]">
+            <p
+              className={`text-xs ${
+                textColor ? "opacity-75" : "text-[#6b6256]"
+              }`}
+            >
               Selling Unit: {prod?.boxInfo || "Box of 20"}
             </p>
 
-            <p className="text-sm text-[#4a4238] leading-relaxed">
+            <p
+              className={`text-sm leading-relaxed ${
+                textColor ? "opacity-85" : "text-[#4a4238]"
+              }`}
+            >
               {prod?.description ||
                 "Rich Nicaraguan long-filler blend wrapped in an oily Habano leaf. Engineered for consistent draw, clean burn, and high repeat velocity across Florida retail humidors."}
             </p>
@@ -215,19 +227,19 @@ export function FeaturedProductSection({
             </Link>
 
             <div className="grid grid-cols-2 gap-3 pt-2">
-              <div className="p-3 rounded-xl border border-[#e5dfd3] bg-white/95">
+              <div className="p-3 rounded-xl border border-[#e5dfd3] bg-white/95 flex flex-col gap-0.5">
                 <p className="text-[9px] uppercase tracking-wider text-[#8c6d48] font-bold">
                   Origin
                 </p>
-                <p className="text-xs font-bold text-[#1a1714] mt-0.5">
+                <p className="text-xs font-bold text-[#1a1714]">
                   {prod?.origin || "Nicaragua"}
                 </p>
               </div>
-              <div className="p-3 rounded-xl border border-[#e5dfd3] bg-white/95">
+              <div className="p-3 rounded-xl border border-[#e5dfd3] bg-white/95 flex flex-col gap-0.5">
                 <p className="text-[9px] uppercase tracking-wider text-[#8c6d48] font-bold">
                   Vitola
                 </p>
-                <p className="text-xs font-bold text-[#1a1714] mt-0.5">
+                <p className="text-xs font-bold text-[#1a1714]">
                   {prod?.shape || "Robusto 5x52"}
                 </p>
               </div>

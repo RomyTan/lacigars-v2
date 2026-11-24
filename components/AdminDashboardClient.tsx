@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { INITIAL_HERO_CONFIG } from "@/lib/storefront-data";
 import {
-  Layers,
   Tag,
   FolderTree,
   Package,
@@ -25,8 +25,6 @@ import {
   LogOut,
   ChevronDown,
   ChevronRight,
-  PanelTop,
-  PanelBottom,
   Monitor,
   Smartphone,
   ClipboardList,
@@ -169,6 +167,71 @@ const INITIAL_ORDERS: OrderItem[] = [
   },
 ];
 
+const HANDLED_CONTENT_KEYS = new Set([
+  "heading",
+  "headingSize",
+  "headingStyle",
+  "textColor",
+  "showDivider",
+  "dividerWidth",
+  "dividerThickness",
+  "bgColor",
+  "bgImage",
+  "overlayEnabled",
+  "overlayColor",
+  "overlayOpacity",
+  "productId",
+  "productSnapshot",
+  "images",
+  "cardRadius",
+  "cardBorder",
+  "cardBorderColor",
+  "cardShadow",
+  "cards",
+  "onlyVisibleForCustomer",
+  "collectionSection",
+  "collectionEnabled",
+  "blocks",
+  "items",
+  "LogoSize",
+]);
+
+const DEFAULT_COLLECTION_CONTENT: Record<string, unknown> = {
+  heading: "",
+  headingSize: 36,
+  headingStyle: "bold",
+  textColor: "#1a1714",
+  showDivider: false,
+  dividerWidth: 100,
+  dividerThickness: 1,
+  bgColor: "#fdfbf7",
+  bgImage: "",
+  overlayEnabled: false,
+  overlayColor: "#000000",
+  overlayOpacity: 40,
+  onlyVisibleForCustomer: false,
+};
+
+function formatSectionLabel(sec: CmsSectionRecord): string {
+  const title = sec.title.trim();
+  if (sec.type === "HERO_3D" && title.toLowerCase().includes("hero")) {
+    return "Hero Section";
+  }
+  if (
+    sec.type === "EDITORIAL_CATEGORIES" &&
+    title.toLowerCase().includes("editorial")
+  ) {
+    return "Story Section";
+  }
+  if (sec.type === "COLLECTION_SECTION") {
+    return title || "Collection Section";
+  }
+  if (sec.type === "FOOTER" && title.toLowerCase().includes("trust")) {
+    return "TrustBar";
+  }
+  return title;
+}
+
 export default function AdminDashboardClient({
   adminEmail,
 }: {
@@ -184,10 +247,48 @@ export default function AdminDashboardClient({
     useState<PreviewViewport>("desktop");
 
   const [headerDraft, setHeaderDraft] = useState({
-    brandLabel: "",
-    announcement: "",
-    ctaLabel: "",
-    ctaHref: "",
+    // Logo & Position
+    logoImage: "/lacigars-logo.png",
+    logoHeightDesktop: 58,
+    logoHeightMobile: 46,
+    logoPositionDesktop: "left",
+    // Navigation
+    mainMenu: "main-menu",
+    autoFillBrandsDropdown: true,
+    autoFillCollectionDropdown: true,
+    maxProductsInDropdown: 9,
+    navAlignment: "center" as "center" | "left",
+    menuFontSize: 12,
+    menuItemSpacing: 22,
+    uppercaseMenuLinks: true,
+    // Header Icons & Layout
+    stickyHeader: true,
+    showSearchIcon: true,
+    showLanguageIcon: false,
+    showAccountIcon: true,
+    headerPaddingY: 12,
+    maxContainerWidth: 1600,
+    // Cart Drawer
+    autoOpenCartOnQuickAdd: true,
+    freeShippingThreshold: 100,
+    freeShippingProgressText:
+      "You're [amount] from Free Domestic Standard Shipping",
+    freeShippingUnlockedText:
+      "You've unlocked Free Domestic Standard Shipping!",
+    cartBadgeColor: "#D92D20",
+    // Mobile Menu Footer
+    facebookUrl: "",
+    tiktokUrl: "",
+    instagramUrl: "",
+    mobileCtaLabel: "Contact Us",
+    mobileCtaLink: "",
+    mobileCopyrightText:
+      "© 2026 Latin American Cigars Corp. All Rights Reserved.",
+    // Colors
+    headerBgColor: "#FFFFFF",
+    headerTextColor: "#10231C",
+    headerHoverAccentColor: "#214335",
+    headerBorderColor: "#ECECE8",
   });
 
   const [footerDraft, setFooterDraft] = useState({
@@ -244,11 +345,49 @@ export default function AdminDashboardClient({
     router.refresh();
   };
 
+  const displaySections = useMemo(() => {
+    const hasCollectionRow = sections.some(
+      (s) => s.type === "COLLECTION_SECTION"
+    );
+    if (hasCollectionRow) return sections;
+
+    const list: CmsSectionRecord[] = [];
+    for (const sec of sections) {
+      list.push(sec);
+      if (sec.type === "EDITORIAL_CATEGORIES") {
+        const storyContent = (sec.content ?? {}) as Record<string, unknown>;
+        const colContent =
+          storyContent.collectionSection &&
+          typeof storyContent.collectionSection === "object"
+            ? {
+                ...DEFAULT_COLLECTION_CONTENT,
+                ...(storyContent.collectionSection as Record<string, unknown>),
+              }
+            : DEFAULT_COLLECTION_CONTENT;
+        const colActive =
+          storyContent.collectionEnabled !== undefined
+            ? Boolean(storyContent.collectionEnabled)
+            : true;
+
+        list.push({
+          id: -100,
+          key: "home-collection-section",
+          type: "COLLECTION_SECTION",
+          title: "Collection Section",
+          content: colContent,
+          sortOrder: sec.sortOrder + 0.5,
+          isActive: colActive,
+        });
+      }
+    }
+    return list;
+  }, [sections]);
+
   const selectedSection =
-    sections.find((s) => s.id === selectedSectionId) ?? null;
+    displaySections.find((s) => s.id === selectedSectionId) ?? null;
 
   const selectedSectionIndex = selectedSection
-    ? sections.findIndex((s) => s.id === selectedSection.id)
+    ? displaySections.findIndex((s) => s.id === selectedSection.id)
     : -1;
 
   const parsedEditorObj: Record<string, unknown> | null = (() => {
@@ -260,8 +399,14 @@ export default function AdminDashboardClient({
     }
   })();
 
+  const extraStringFields = parsedEditorObj
+    ? Object.entries(parsedEditorObj).filter(
+        ([k, v]) => typeof v === "string" && !HANDLED_CONTENT_KEYS.has(k)
+      )
+    : [];
+
   const buildPreviewSections = () => {
-    return sections.map((sec) => {
+    return displaySections.map((sec) => {
       if (sec.id !== selectedSectionId) return sec;
       return {
         ...sec,
@@ -346,6 +491,18 @@ export default function AdminDashboardClient({
       if (medRes.ok) {
         const medData = await medRes.json();
         setMediaList(medData.media ?? []);
+      }
+
+      const headerSec = loadedSections.find(
+        (s) =>
+          s.type.toUpperCase().includes("HEADER") ||
+          s.key.toLowerCase().includes("header")
+      );
+      if (headerSec?.content && typeof headerSec.content === "object") {
+        setHeaderDraft((prev) => ({
+          ...prev,
+          ...(headerSec.content as Partial<typeof prev>),
+        }));
       }
 
       const footerSec = loadedSections.find(
@@ -476,6 +633,62 @@ export default function AdminDashboardClient({
     showToast("success", `Background "${file.name}" applied.`);
   };
 
+  const handleHeroCardBgUpload = async (cardIdx: number, file: File) => {
+    const uploaded = await uploadMediaFile(file);
+    if (!uploaded) return;
+    const baseBlocks =
+      Array.isArray(parsedEditorObj?.blocks) &&
+      (parsedEditorObj?.blocks as unknown[]).length > 0
+        ? [...(parsedEditorObj?.blocks as Array<Record<string, unknown>>)]
+        : INITIAL_HERO_CONFIG.blocks.map((b) => ({ ...b }));
+    if (baseBlocks[cardIdx]) {
+      baseBlocks[cardIdx] = { ...baseBlocks[cardIdx], bgImage: uploaded.url };
+      updateNestedFields({ blocks: baseBlocks });
+      showToast("success", `Card ${cardIdx + 1} background updated.`);
+    }
+  };
+
+  const handleHeaderLogoUpload = async (file: File) => {
+    const uploaded = await uploadMediaFile(file);
+    if (!uploaded) return;
+    setHeaderDraft((prev) => ({ ...prev, logoImage: uploaded.url }));
+    showToast("success", `Header logo "${file.name}" applied.`);
+  };
+
+  const handleSaveHeaderGroup = async () => {
+    const headerSec = sections.find(
+      (s) =>
+        s.type.toUpperCase().includes("HEADER") ||
+        s.key.toLowerCase().includes("header")
+    );
+    if (!headerSec) {
+      showToast("success", "Header settings updated in preview.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const res = await fetch("/api/cms/sections", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: headerSec.id,
+          content: { ...(headerSec.content ?? {}), ...headerDraft },
+        }),
+      });
+      if (!res.ok) throw new Error();
+      const { section: updated } = await res.json();
+      setSections((prev) =>
+        prev.map((s) => (s.id === updated.id ? updated : s))
+      );
+      showToast("success", "Header settings saved to database.");
+    } catch {
+      showToast("error", "Failed to save header settings.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleImageFileUpload = async (file: File) => {
     if (file.size > 3 * 1024 * 1024) {
       showToast("error", "Image size must be under 3MB.");
@@ -489,6 +702,35 @@ export default function AdminDashboardClient({
 
   const handleToggleSection = async (section: CmsSectionRecord) => {
     try {
+      if (section.id === -100) {
+        const storySec = sections.find(
+          (s) => s.type === "EDITORIAL_CATEGORIES"
+        );
+        if (!storySec) return;
+        const nextActive = !section.isActive;
+        const res = await fetch("/api/cms/sections", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: storySec.id,
+            content: {
+              ...(storySec.content ?? {}),
+              collectionEnabled: nextActive,
+            },
+          }),
+        });
+        if (!res.ok) throw new Error();
+        const { section: updated } = await res.json();
+        setSections((prev) =>
+          prev.map((s) => (s.id === updated.id ? updated : s))
+        );
+        showToast(
+          "success",
+          `Collection Section ${nextActive ? "enabled" : "hidden"}.`
+        );
+        return;
+      }
+
       const res = await fetch("/api/cms/sections", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -504,7 +746,9 @@ export default function AdminDashboardClient({
       );
       showToast(
         "success",
-        `${updated.title} ${updated.isActive ? "enabled" : "hidden"}.`
+        `${formatSectionLabel(updated)} ${
+          updated.isActive ? "enabled" : "hidden"
+        }.`
       );
     } catch {
       showToast("error", "Failed to update section visibility.");
@@ -548,6 +792,31 @@ export default function AdminDashboardClient({
 
     setSaving(true);
     try {
+      if (selectedSection.id === -100) {
+        const storySec = sections.find(
+          (s) => s.type === "EDITORIAL_CATEGORIES"
+        );
+        if (!storySec) throw new Error();
+        const res = await fetch("/api/cms/sections", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: storySec.id,
+            content: {
+              ...(storySec.content ?? {}),
+              collectionSection: parsedContent,
+            },
+          }),
+        });
+        if (!res.ok) throw new Error();
+        const { section: updated } = await res.json();
+        setSections((prev) =>
+          prev.map((s) => (s.id === updated.id ? updated : s))
+        );
+        showToast("success", "Collection Section saved to database.");
+        return;
+      }
+
       const res = await fetch("/api/cms/sections", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -896,7 +1165,7 @@ export default function AdminDashboardClient({
 
   return (
     <div className="relative z-100 h-screen overflow-hidden bg-[#f4f3f0] text-[#1a1714] flex flex-col">
-      <header className="h-14 bg-[#1a1714] text-[#fdfbf7] px-5 flex items-center justify-between border-b border-white/10 sticky top-0 z-20">
+      <header className="h-14 bg-[#1a1714] text-[#fdfbf7] px-5 flex items-center justify-between border-b border-white/10 sticky top-0 z-20 shrink-0">
         <div className="flex items-center gap-3">
           <img
             src="/lacigars-logo.png"
@@ -962,66 +1231,25 @@ export default function AdminDashboardClient({
 
       <div className="flex-1 min-h-0 flex flex-col md:flex-row overflow-hidden">
         {/* Left Navigation Sidebar */}
-        <aside className="w-full md:w-68 bg-[#dedbd4] border-b md:border-b-0 md:border-r border-[#c8c3b8] p-4 space-y-2.5 shrink-0">
-          <p className="px-1 py-1 text-[11px] font-extrabold uppercase tracking-[0.06em] text-[#231f1c]">
-            THEME EDITOR
-          </p>
-
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab("sections");
-              setEditorFocus("header");
-            }}
-            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-semibold transition-colors ${
-              activeTab === "sections" && editorFocus === "header"
-                ? "bg-[#241307] text-[#fdfbf7]"
-                : "text-[#2c251f] hover:bg-[#d3cfc6]"
-            }`}
-          >
-            <span className="flex items-center gap-2.5">
-              <PanelTop className="w-4 h-4 text-[#3d2110]" />
-              Header Group
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab("sections");
-              setEditorFocus("footer");
-            }}
-            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-semibold transition-colors ${
-              activeTab === "sections" && editorFocus === "footer"
-                ? "bg-[#241307] text-[#fdfbf7]"
-                : "text-[#2c251f] hover:bg-[#d3cfc6]"
-            }`}
-          >
-            <span className="flex items-center gap-2.5">
-              <PanelBottom className="w-4 h-4 text-[#3d2110]" />
-              Footer Group
-            </span>
-          </button>
-
-          <div className="pt-2.5 border-t border-[#c6c1b6]">
+        <aside className="w-full md:w-68 bg-[#dedbd4] border-b md:border-b-0 md:border-r border-[#c8c3b8] p-4 pb-10 space-y-2.5 shrink-0 md:h-full md:overflow-y-auto">
+          <div>
             <div className="w-full flex items-center justify-between px-1 py-1 text-[11px] font-extrabold uppercase tracking-[0.06em] text-[#231f1c]">
               <button
                 type="button"
                 onClick={() => {
                   setActiveTab("sections");
-                  setEditorFocus("homepage");
                   setThemeSectionsOpen(true);
                 }}
                 className="flex-1 text-left"
               >
-                THEME SECTION
+                THEME EDITOR
               </button>
               <button
                 type="button"
                 onClick={() => setThemeSectionsOpen((prev) => !prev)}
                 className="p-0.5 rounded hover:bg-[#d3cfc6] text-[#3d2110]"
                 title={
-                  themeSectionsOpen ? "Collapse sections" : "Expand sections"
+                  themeSectionsOpen ? "Collapse editor" : "Expand editor"
                 }
               >
                 {themeSectionsOpen ? (
@@ -1034,7 +1262,24 @@ export default function AdminDashboardClient({
 
             {themeSectionsOpen && (
               <div className="mt-2 space-y-2">
-                {sections.map((sec, idx) => {
+                {/* 1. Header */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab("sections");
+                    setEditorFocus("header");
+                  }}
+                  className={`w-full flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-lg text-xs font-semibold transition-colors border ${
+                    activeTab === "sections" && editorFocus === "header"
+                      ? "bg-[#241307] text-[#fdfbf7] border-[#241307]"
+                      : "bg-[#e3e0d9] text-[#231f1c] border-[#c8c3b8] hover:bg-[#d8d4cb]"
+                  }`}
+                >
+                  <span className="truncate">1. Header</span>
+                </button>
+
+                {/* 2..N Theme Sections */}
+                {displaySections.map((sec, idx) => {
                   const isCurrent =
                     activeTab === "sections" &&
                     editorFocus === "homepage" &&
@@ -1054,7 +1299,7 @@ export default function AdminDashboardClient({
                           sec.isActive ? "" : "line-through opacity-55"
                         }`}
                       >
-                        {idx + 1}. {sec.title}
+                        {idx + 2}. {formatSectionLabel(sec)}
                       </span>
                       <span
                         className={`text-[10px] font-bold px-2 py-0.5 rounded shrink-0 ${
@@ -1070,10 +1315,27 @@ export default function AdminDashboardClient({
                     </div>
                   );
                 })}
+
+                {/* Last. Footer */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab("sections");
+                    setEditorFocus("footer");
+                  }}
+                  className={`w-full flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-lg text-xs font-semibold transition-colors border ${
+                    activeTab === "sections" && editorFocus === "footer"
+                      ? "bg-[#241307] text-[#fdfbf7] border-[#241307]"
+                      : "bg-[#e3e0d9] text-[#231f1c] border-[#c8c3b8] hover:bg-[#d8d4cb]"
+                  }`}
+                >
+                  <span className="truncate">
+                    {displaySections.length + 2}. Footer
+                  </span>
+                </button>
               </div>
             )}
           </div>
-
           <div className="pt-2.5 border-t border-[#c6c1b6]">
             <button
               type="button"
@@ -1094,12 +1356,12 @@ export default function AdminDashboardClient({
             </button>
           </div>
 
-          <div className="pt-3 mt-2 border-t border-[#c6c1b6]">
+          <div className="pt-3 border-t border-[#c6c1b6] space-y-1.5">
             <p className="px-1 py-1 text-[11px] font-extrabold uppercase tracking-[0.06em] text-[#231f1c]">
               WHOLESALE CATALOG
             </p>
 
-            <div className="space-y-2 mt-1.5">
+            <div className="space-y-2">
               <button
                 type="button"
                 onClick={() => setActiveTab("brands")}
@@ -1205,7 +1467,7 @@ export default function AdminDashboardClient({
             <div className="w-full h-full min-h-0 flex flex-col lg:flex-row gap-4 items-stretch overflow-hidden">
               {/* Center Column: Own Scrollbar */}
               <div className="flex-1 min-w-0 h-full overflow-y-auto bg-white border border-[#e0dbd0] rounded-xl shadow-xs flex flex-col">
-                <div className="px-4 py-3 bg-[#faf8f4] border-b border-[#ece8df] flex flex-wrap items-center justify-between gap-2">
+                <div className="px-4 py-3 bg-[#faf8f4] border-b border-[#ece8df] flex flex-wrap items-center justify-between gap-2 shrink-0">
                   <div>
                     <p className="text-[10px] font-bold uppercase tracking-wider text-[#8c6d48]">
                       Theme Editor Live Preview
@@ -1289,7 +1551,7 @@ export default function AdminDashboardClient({
                   </div>
                 </div>
 
-                <div className="p-3 bg-[#e4dfd5] flex-1 min-h-[780px] flex justify-center">
+                <div className="p-3 bg-[#e4dfd5] flex-1 min-h-0 flex justify-center">
                   <div
                     className={`w-full h-full bg-white border border-[#cfc6b6] rounded-xl overflow-hidden shadow-md transition-all ${
                       previewViewport === "mobile"
@@ -1312,84 +1574,828 @@ export default function AdminDashboardClient({
               <div className="w-full lg:w-68 shrink-0 h-full overflow-y-auto bg-white border border-[#e0dbd0] rounded-xl shadow-xs">
                 {editorFocus === "header" ? (
                   <>
-                    <div className="px-4 py-3.5 border-b border-[#ece8df]">
-                      <p className="text-[10px] font-mono uppercase text-[#8c6d48]">
-                        GLOBAL HEADER GROUP
-                      </p>
-                      <h2 className="text-sm font-bold text-[#1a1714]">
-                        Edit: Header Group
-                      </h2>
+                    <div className="px-4 py-3.5 border-b border-[#ece8df] flex items-center justify-between gap-2 sticky top-0 bg-white z-10">
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-mono uppercase text-[#8c6d48] truncate">
+                          GLOBAL HEADER GROUP
+                        </p>
+                        <h2 className="text-sm font-bold text-[#1a1714] truncate">
+                          Header Settings
+                        </h2>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={saving}
+                        onClick={handleSaveHeaderGroup}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#1a1714] hover:bg-[#8c6d48] text-white text-[11px] font-bold transition-colors disabled:opacity-50 shrink-0"
+                      >
+                        <Save className="w-3 h-3" />
+                        {saving ? "..." : "Save"}
+                      </button>
                     </div>
-                    <div className="p-4 space-y-3">
-                      <div>
-                        <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256] mb-1">
-                          Brand Label
-                        </label>
-                        <input
-                          type="text"
-                          value={headerDraft.brandLabel}
-                          onChange={(e) =>
-                            setHeaderDraft({
-                              ...headerDraft,
-                              brandLabel: e.target.value,
-                            })
-                          }
-                          className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
-                        />
+
+                    <div className="p-4 space-y-5 text-xs text-[#231f1c]">
+                      {/* 1. LOGO & POSITION */}
+                      <div className="space-y-3">
+                        <p className="text-xs font-bold text-[#1a1714]">
+                          Logo &amp; Position
+                        </p>
+
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] text-[#4a4238]">
+                              Logo image
+                            </span>
+                            <label className="inline-flex items-center gap-1 px-2 py-1 rounded bg-[#1a1714] hover:bg-[#8c6d48] text-white text-[10px] font-bold cursor-pointer">
+                              <Upload className="w-3 h-3" />
+                              {uploadingImage ? "..." : "Upload"}
+                              <input
+                                type="file"
+                                accept="image/*"
+                                disabled={uploadingImage}
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) handleHeaderLogoUpload(file);
+                                  e.target.value = "";
+                                }}
+                                className="hidden"
+                              />
+                            </label>
+                          </div>
+
+                          <div className="relative h-20 rounded-xl border border-[#dcd4c5] bg-[#f8f6f2] overflow-hidden flex items-center justify-center p-2">
+                            {headerDraft.logoImage ? (
+                              <img
+                                src={headerDraft.logoImage}
+                                alt="Header Logo"
+                                className="max-h-full max-w-full object-contain"
+                              />
+                            ) : (
+                              <span className="text-[10px] text-[#8a8175]">
+                                No logo selected
+                              </span>
+                            )}
+                          </div>
+
+                          {mediaList.length > 0 && (
+                            <select
+                              value={
+                                mediaList.some(
+                                  (m) => m.url === headerDraft.logoImage
+                                )
+                                  ? headerDraft.logoImage
+                                  : ""
+                              }
+                              onChange={(e) => {
+                                if (e.target.value) {
+                                  setHeaderDraft({
+                                    ...headerDraft,
+                                    logoImage: e.target.value,
+                                  });
+                                }
+                              }}
+                              className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
+                            >
+                              <option value="">-- Pick logo from Files --</option>
+                              {mediaList.map((m) => (
+                                <option key={m.id} value={m.url}>
+                                  {m.fileName}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+
+                          <input
+                            type="text"
+                            value={headerDraft.logoImage}
+                            onChange={(e) =>
+                              setHeaderDraft({
+                                ...headerDraft,
+                                logoImage: e.target.value,
+                              })
+                            }
+                            placeholder="/lacigars-logo.png"
+                            className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="block text-[11px] text-[#4a4238]">
+                            Logo height (Desktop)
+                          </label>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="range"
+                              min={24}
+                              max={120}
+                              value={headerDraft.logoHeightDesktop}
+                              onChange={(e) =>
+                                setHeaderDraft({
+                                  ...headerDraft,
+                                  logoHeightDesktop: Number(e.target.value),
+                                })
+                              }
+                              className="flex-1 accent-[#1a1714]"
+                            />
+                            <div className="flex items-center border border-[#dcd4c5] rounded-lg bg-[#fdfbf7] px-2 py-1 w-16">
+                              <input
+                                type="number"
+                                min={24}
+                                max={120}
+                                value={headerDraft.logoHeightDesktop}
+                                onChange={(e) =>
+                                  setHeaderDraft({
+                                    ...headerDraft,
+                                    logoHeightDesktop:
+                                      Number(e.target.value) || 58,
+                                  })
+                                }
+                                className="w-full text-xs bg-transparent focus:outline-none"
+                              />
+                              <span className="text-[10px] text-[#6b6256]">
+                                px
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="block text-[11px] text-[#4a4238]">
+                            Logo height (Mobile)
+                          </label>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="range"
+                              min={20}
+                              max={100}
+                              value={headerDraft.logoHeightMobile}
+                              onChange={(e) =>
+                                setHeaderDraft({
+                                  ...headerDraft,
+                                  logoHeightMobile: Number(e.target.value),
+                                })
+                              }
+                              className="flex-1 accent-[#1a1714]"
+                            />
+                            <div className="flex items-center border border-[#dcd4c5] rounded-lg bg-[#fdfbf7] px-2 py-1 w-16">
+                              <input
+                                type="number"
+                                min={20}
+                                max={100}
+                                value={headerDraft.logoHeightMobile}
+                                onChange={(e) =>
+                                  setHeaderDraft({
+                                    ...headerDraft,
+                                    logoHeightMobile:
+                                      Number(e.target.value) || 46,
+                                  })
+                                }
+                                className="w-full text-xs bg-transparent focus:outline-none"
+                              />
+                              <span className="text-[10px] text-[#6b6256]">
+                                px
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="block text-[11px] text-[#4a4238]">
+                            Logo position (Desktop)
+                          </label>
+                          <select
+                            value={headerDraft.logoPositionDesktop}
+                            onChange={(e) =>
+                              setHeaderDraft({
+                                ...headerDraft,
+                                logoPositionDesktop: e.target.value,
+                              })
+                            }
+                            className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
+                          >
+                            <option value="left">
+                              Left (Logo — Nav — Icons)
+                            </option>
+                            <option value="center">
+                              Center (Nav — Logo — Icons)
+                            </option>
+                            <option value="top-center">
+                              Top Center (Logo above Nav)
+                            </option>
+                          </select>
+                        </div>
                       </div>
-                      <div>
-                        <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256] mb-1">
-                          Top Bar Note
-                        </label>
-                        <input
-                          type="text"
-                          value={headerDraft.announcement}
-                          onChange={(e) =>
-                            setHeaderDraft({
-                              ...headerDraft,
-                              announcement: e.target.value,
-                            })
-                          }
-                          className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
-                        />
+
+                      {/* 2. NAVIGATION */}
+                      <div className="space-y-3 pt-4 border-t border-[#ece8df]">
+                        <p className="text-xs font-bold text-[#1a1714]">
+                          Navigation
+                        </p>
+
+                        <div className="space-y-1">
+                          <label className="block text-[11px] text-[#4a4238]">
+                            Main menu
+                          </label>
+                          <select
+                            value={headerDraft.mainMenu}
+                            onChange={(e) =>
+                              setHeaderDraft({
+                                ...headerDraft,
+                                mainMenu: e.target.value,
+                              })
+                            }
+                            className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
+                          >
+                            <option value="main-menu">Main menu</option>
+                            <option value="wholesale-menu">
+                              Wholesale menu
+                            </option>
+                            <option value="footer-menu">Footer menu</option>
+                          </select>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] text-[#4a4238] leading-snug">
+                            Auto-fill BRANDS dropdown from store Vendors
+                          </span>
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={headerDraft.autoFillBrandsDropdown}
+                            onClick={() =>
+                              setHeaderDraft({
+                                ...headerDraft,
+                                autoFillBrandsDropdown:
+                                  !headerDraft.autoFillBrandsDropdown,
+                              })
+                            }
+                            className={`relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors cursor-pointer ${
+                              headerDraft.autoFillBrandsDropdown
+                                ? "bg-[#1a1714]"
+                                : "bg-[#c8c3b8]"
+                            }`}
+                          >
+                            <span
+                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform mt-0.5 ${
+                                headerDraft.autoFillBrandsDropdown
+                                  ? "translate-x-4.5"
+                                  : "translate-x-0.5"
+                              }`}
+                            />
+                          </button>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] text-[#4a4238] leading-snug">
+                            Auto-fill dropdown for all collection menus
+                          </span>
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={
+                              headerDraft.autoFillCollectionDropdown
+                            }
+                            onClick={() =>
+                              setHeaderDraft({
+                                ...headerDraft,
+                                autoFillCollectionDropdown:
+                                  !headerDraft.autoFillCollectionDropdown,
+                              })
+                            }
+                            className={`relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors cursor-pointer ${
+                              headerDraft.autoFillCollectionDropdown
+                                ? "bg-[#1a1714]"
+                                : "bg-[#c8c3b8]"
+                            }`}
+                          >
+                            <span
+                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform mt-0.5 ${
+                                headerDraft.autoFillCollectionDropdown
+                                  ? "translate-x-4.5"
+                                  : "translate-x-0.5"
+                              }`}
+                            />
+                          </button>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="block text-[11px] text-[#4a4238]">
+                            Max products in auto collection dropdown
+                          </label>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="range"
+                              min={3}
+                              max={24}
+                              value={headerDraft.maxProductsInDropdown}
+                              onChange={(e) =>
+                                setHeaderDraft({
+                                  ...headerDraft,
+                                  maxProductsInDropdown: Number(e.target.value),
+                                })
+                              }
+                              className="flex-1 accent-[#1a1714]"
+                            />
+                            <input
+                              type="number"
+                              min={3}
+                              max={24}
+                              value={headerDraft.maxProductsInDropdown}
+                              onChange={(e) =>
+                                setHeaderDraft({
+                                  ...headerDraft,
+                                  maxProductsInDropdown:
+                                    Number(e.target.value) || 9,
+                                })
+                              }
+                              className="w-14 px-2 py-1 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="block text-[11px] text-[#4a4238]">
+                            Navigation alignment
+                          </label>
+                          <div className="grid grid-cols-2 p-0.5 rounded-lg bg-[#ebe8e1] border border-[#dcd4c5]">
+                            {(["center", "left"] as const).map((align) => (
+                              <button
+                                key={align}
+                                type="button"
+                                onClick={() =>
+                                  setHeaderDraft({
+                                    ...headerDraft,
+                                    navAlignment: align,
+                                  })
+                                }
+                                className={`py-1 rounded-md text-[11px] font-semibold capitalize transition-colors ${
+                                  headerDraft.navAlignment === align
+                                    ? "bg-white text-[#1a1714] shadow-xs"
+                                    : "text-[#6b6256]"
+                                }`}
+                              >
+                                {align}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="block text-[11px] text-[#4a4238]">
+                            Menu font size
+                          </label>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="range"
+                              min={10}
+                              max={20}
+                              value={headerDraft.menuFontSize}
+                              onChange={(e) =>
+                                setHeaderDraft({
+                                  ...headerDraft,
+                                  menuFontSize: Number(e.target.value),
+                                })
+                              }
+                              className="flex-1 accent-[#1a1714]"
+                            />
+                            <div className="flex items-center border border-[#dcd4c5] rounded-lg bg-[#fdfbf7] px-2 py-1 w-16">
+                              <input
+                                type="number"
+                                min={10}
+                                max={20}
+                                value={headerDraft.menuFontSize}
+                                onChange={(e) =>
+                                  setHeaderDraft({
+                                    ...headerDraft,
+                                    menuFontSize: Number(e.target.value) || 12,
+                                  })
+                                }
+                                className="w-full text-xs bg-transparent focus:outline-none"
+                              />
+                              <span className="text-[10px] text-[#6b6256]">
+                                px
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="block text-[11px] text-[#4a4238]">
+                            Space between menu items
+                          </label>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="range"
+                              min={8}
+                              max={48}
+                              value={headerDraft.menuItemSpacing}
+                              onChange={(e) =>
+                                setHeaderDraft({
+                                  ...headerDraft,
+                                  menuItemSpacing: Number(e.target.value),
+                                })
+                              }
+                              className="flex-1 accent-[#1a1714]"
+                            />
+                            <div className="flex items-center border border-[#dcd4c5] rounded-lg bg-[#fdfbf7] px-2 py-1 w-16">
+                              <input
+                                type="number"
+                                min={8}
+                                max={48}
+                                value={headerDraft.menuItemSpacing}
+                                onChange={(e) =>
+                                  setHeaderDraft({
+                                    ...headerDraft,
+                                    menuItemSpacing:
+                                      Number(e.target.value) || 22,
+                                  })
+                                }
+                                className="w-full text-xs bg-transparent focus:outline-none"
+                              />
+                              <span className="text-[10px] text-[#6b6256]">
+                                px
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] text-[#4a4238]">
+                            Uppercase menu links
+                          </span>
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={headerDraft.uppercaseMenuLinks}
+                            onClick={() =>
+                              setHeaderDraft({
+                                ...headerDraft,
+                                uppercaseMenuLinks:
+                                  !headerDraft.uppercaseMenuLinks,
+                              })
+                            }
+                            className={`relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors cursor-pointer ${
+                              headerDraft.uppercaseMenuLinks
+                                ? "bg-[#1a1714]"
+                                : "bg-[#c8c3b8]"
+                            }`}
+                          >
+                            <span
+                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform mt-0.5 ${
+                                headerDraft.uppercaseMenuLinks
+                                  ? "translate-x-4.5"
+                                  : "translate-x-0.5"
+                              }`}
+                            />
+                          </button>
+                        </div>
                       </div>
-                      <div>
-                        <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256] mb-1">
-                          Action Button Label
-                        </label>
-                        <input
-                          type="text"
-                          value={headerDraft.ctaLabel}
-                          onChange={(e) =>
-                            setHeaderDraft({
-                              ...headerDraft,
-                              ctaLabel: e.target.value,
-                            })
-                          }
-                          className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
-                        />
+
+                      {/* 3. HEADER ICONS & LAYOUT */}
+                      <div className="space-y-3 pt-4 border-t border-[#ece8df]">
+                        <p className="text-xs font-bold text-[#1a1714]">
+                          Header Icons &amp; Layout
+                        </p>
+
+                        {(
+                          [
+                            ["stickyHeader", "Sticky header on scroll"],
+                            ["showSearchIcon", "Show Search icon & drawer"],
+                            ["showLanguageIcon", "Show Language icon (EN / ES)"],
+                            ["showAccountIcon", "Show Account icon & popup"],
+                          ] as const
+                        ).map(([key, label]) => (
+                          <div
+                            key={key}
+                            className="flex items-center justify-between gap-2"
+                          >
+                            <span className="text-[11px] text-[#4a4238]">
+                              {label}
+                            </span>
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={headerDraft[key]}
+                              onClick={() =>
+                                setHeaderDraft({
+                                  ...headerDraft,
+                                  [key]: !headerDraft[key],
+                                })
+                              }
+                              className={`relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors cursor-pointer ${
+                                headerDraft[key]
+                                  ? "bg-[#1a1714]"
+                                  : "bg-[#c8c3b8]"
+                              }`}
+                            >
+                              <span
+                                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform mt-0.5 ${
+                                  headerDraft[key]
+                                    ? "translate-x-4.5"
+                                    : "translate-x-0.5"
+                                }`}
+                              />
+                            </button>
+                          </div>
+                        ))}
+
+                        <div className="space-y-1">
+                          <label className="block text-[11px] text-[#4a4238]">
+                            Header top/bottom padding
+                          </label>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="range"
+                              min={4}
+                              max={36}
+                              value={headerDraft.headerPaddingY}
+                              onChange={(e) =>
+                                setHeaderDraft({
+                                  ...headerDraft,
+                                  headerPaddingY: Number(e.target.value),
+                                })
+                              }
+                              className="flex-1 accent-[#1a1714]"
+                            />
+                            <div className="flex items-center border border-[#dcd4c5] rounded-lg bg-[#fdfbf7] px-2 py-1 w-16">
+                              <input
+                                type="number"
+                                min={4}
+                                max={36}
+                                value={headerDraft.headerPaddingY}
+                                onChange={(e) =>
+                                  setHeaderDraft({
+                                    ...headerDraft,
+                                    headerPaddingY:
+                                      Number(e.target.value) || 12,
+                                  })
+                                }
+                                className="w-full text-xs bg-transparent focus:outline-none"
+                              />
+                              <span className="text-[10px] text-[#6b6256]">
+                                px
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="block text-[11px] text-[#4a4238]">
+                            Max container width
+                          </label>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="range"
+                              min={1024}
+                              max={1920}
+                              step={16}
+                              value={headerDraft.maxContainerWidth}
+                              onChange={(e) =>
+                                setHeaderDraft({
+                                  ...headerDraft,
+                                  maxContainerWidth: Number(e.target.value),
+                                })
+                              }
+                              className="flex-1 accent-[#1a1714]"
+                            />
+                            <div className="flex items-center border border-[#dcd4c5] rounded-lg bg-[#fdfbf7] px-2 py-1 w-20">
+                              <input
+                                type="number"
+                                min={1024}
+                                max={1920}
+                                value={headerDraft.maxContainerWidth}
+                                onChange={(e) =>
+                                  setHeaderDraft({
+                                    ...headerDraft,
+                                    maxContainerWidth:
+                                      Number(e.target.value) || 1600,
+                                  })
+                                }
+                                className="w-full text-xs bg-transparent focus:outline-none"
+                              />
+                              <span className="text-[10px] text-[#6b6256]">
+                                px
+                              </span>
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                      <div>
-                        <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256] mb-1">
-                          Action Link
-                        </label>
-                        <input
-                          type="text"
-                          value={headerDraft.ctaHref}
-                          onChange={(e) =>
-                            setHeaderDraft({
-                              ...headerDraft,
-                              ctaHref: e.target.value,
-                            })
-                          }
-                          className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
-                        />
+
+                      {/* 4. CART DRAWER */}
+                      <div className="space-y-3 pt-4 border-t border-[#ece8df]">
+                        <p className="text-xs font-bold text-[#1a1714]">
+                          Cart Drawer
+                        </p>
+
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[11px] text-[#4a4238]">
+                            Auto-open cart drawer on Quick Add
+                          </span>
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={headerDraft.autoOpenCartOnQuickAdd}
+                            onClick={() =>
+                              setHeaderDraft({
+                                ...headerDraft,
+                                autoOpenCartOnQuickAdd:
+                                  !headerDraft.autoOpenCartOnQuickAdd,
+                              })
+                            }
+                            className={`relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors cursor-pointer ${
+                              headerDraft.autoOpenCartOnQuickAdd
+                                ? "bg-[#1a1714]"
+                                : "bg-[#c8c3b8]"
+                            }`}
+                          >
+                            <span
+                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform mt-0.5 ${
+                                headerDraft.autoOpenCartOnQuickAdd
+                                  ? "translate-x-4.5"
+                                  : "translate-x-0.5"
+                              }`}
+                            />
+                          </button>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="block text-[11px] text-[#4a4238]">
+                            Free shipping threshold (0 to hide)
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            value={headerDraft.freeShippingThreshold}
+                            onChange={(e) =>
+                              setHeaderDraft({
+                                ...headerDraft,
+                                freeShippingThreshold:
+                                  Number(e.target.value) || 0,
+                              })
+                            }
+                            className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="block text-[11px] text-[#4a4238]">
+                            Free shipping progress text
+                          </label>
+                          <textarea
+                            rows={2}
+                            value={headerDraft.freeShippingProgressText}
+                            onChange={(e) =>
+                              setHeaderDraft({
+                                ...headerDraft,
+                                freeShippingProgressText: e.target.value,
+                              })
+                            }
+                            className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
+                          />
+                          <p className="text-[10px] text-[#6b6256]">
+                            Use [amount] where the remaining amount should
+                            appear.
+                          </p>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="block text-[11px] text-[#4a4238]">
+                            Free shipping unlocked text
+                          </label>
+                          <textarea
+                            rows={2}
+                            value={headerDraft.freeShippingUnlockedText}
+                            onChange={(e) =>
+                              setHeaderDraft({
+                                ...headerDraft,
+                                freeShippingUnlockedText: e.target.value,
+                              })
+                            }
+                            className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="block text-[11px] text-[#4a4238]">
+                            Cart badge &amp; progress bar color
+                          </label>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="color"
+                              value={headerDraft.cartBadgeColor}
+                              onChange={(e) =>
+                                setHeaderDraft({
+                                  ...headerDraft,
+                                  cartBadgeColor: e.target.value,
+                                })
+                              }
+                              className="h-7 w-9 rounded border border-[#dcd4c5] cursor-pointer bg-white p-0.5"
+                            />
+                            <input
+                              type="text"
+                              value={headerDraft.cartBadgeColor}
+                              onChange={(e) =>
+                                setHeaderDraft({
+                                  ...headerDraft,
+                                  cartBadgeColor: e.target.value,
+                                })
+                              }
+                              className="flex-1 px-2.5 py-1 text-xs font-mono bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 5. MOBILE MENU FOOTER */}
+                      <div className="space-y-3 pt-4 border-t border-[#ece8df]">
+                        <p className="text-xs font-bold text-[#1a1714]">
+                          Mobile Menu Footer
+                        </p>
+
+                        {(
+                          [
+                            ["facebookUrl", "Facebook URL", "Paste a link or search"],
+                            ["tiktokUrl", "TikTok URL", "Paste a link or search"],
+                            ["instagramUrl", "Instagram URL", "Paste a link or search"],
+                            ["mobileCtaLabel", "CTA button label", "Contact Us"],
+                            ["mobileCtaLink", "CTA button link", "Paste a link or search"],
+                            [
+                              "mobileCopyrightText",
+                              "Copyright text",
+                              "© 2026 Latin American Cigars Corp. All Rights Reserved.",
+                            ],
+                          ] as const
+                        ).map(([key, label, placeholder]) => (
+                          <div key={key} className="space-y-1">
+                            <label className="block text-[11px] text-[#4a4238]">
+                              {label}
+                            </label>
+                            <input
+                              type="text"
+                              value={headerDraft[key]}
+                              onChange={(e) =>
+                                setHeaderDraft({
+                                  ...headerDraft,
+                                  [key]: e.target.value,
+                                })
+                              }
+                              placeholder={placeholder}
+                              className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
+                            />
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* 6. COLORS */}
+                      <div className="space-y-3 pt-4 border-t border-[#ece8df]">
+                        <p className="text-xs font-bold text-[#1a1714]">
+                          Colors
+                        </p>
+
+                        {(
+                          [
+                            ["headerBgColor", "Header background"],
+                            ["headerTextColor", "Text & icons color"],
+                            ["headerHoverAccentColor", "Hover accent color"],
+                            ["headerBorderColor", "Bottom border color"],
+                          ] as const
+                        ).map(([key, label]) => (
+                          <div key={key} className="space-y-1">
+                            <label className="block text-[11px] text-[#4a4238]">
+                              {label}
+                            </label>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="color"
+                                value={headerDraft[key]}
+                                onChange={(e) =>
+                                  setHeaderDraft({
+                                    ...headerDraft,
+                                    [key]: e.target.value,
+                                  })
+                                }
+                                className="h-7 w-9 rounded border border-[#dcd4c5] cursor-pointer bg-white p-0.5"
+                              />
+                              <input
+                                type="text"
+                                value={headerDraft[key]}
+                                onChange={(e) =>
+                                  setHeaderDraft({
+                                    ...headerDraft,
+                                    [key]: e.target.value,
+                                  })
+                                }
+                                className="flex-1 px-2.5 py-1 text-xs font-mono bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
+                              />
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   </>
                 ) : editorFocus === "footer" ? (
                   <>
-                    <div className="px-4 py-3.5 border-b border-[#ece8df] flex items-center justify-between gap-2">
+                    <div className="px-4 py-3.5 border-b border-[#ece8df] flex items-center justify-between gap-2 sticky top-0 bg-white z-10">
                       <div className="min-w-0">
                         <p className="text-[10px] font-mono uppercase text-[#8c6d48] truncate">
                           GLOBAL FOOTER GROUP
@@ -1409,8 +2415,8 @@ export default function AdminDashboardClient({
                       </button>
                     </div>
                     <div className="p-4 space-y-3">
-                      <div>
-                        <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256] mb-1">
+                      <div className="space-y-1">
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
                           Footer Tagline
                         </label>
                         <textarea
@@ -1425,8 +2431,8 @@ export default function AdminDashboardClient({
                           className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
                         />
                       </div>
-                      <div>
-                        <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256] mb-1">
+                      <div className="space-y-1">
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
                           Copyright Line
                         </label>
                         <input
@@ -1441,8 +2447,8 @@ export default function AdminDashboardClient({
                           className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
                         />
                       </div>
-                      <div>
-                        <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256] mb-1">
+                      <div className="space-y-1">
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
                           Contact Email
                         </label>
                         <input
@@ -1461,7 +2467,7 @@ export default function AdminDashboardClient({
                   </>
                 ) : selectedSection && parsedEditorObj ? (
                   <>
-                    <div className="px-4 py-3.5 border-b border-[#ece8df] flex items-center justify-between gap-2">
+                    <div className="px-4 py-3.5 border-b border-[#ece8df] flex items-center justify-between gap-2 sticky top-0 bg-white z-10">
                       <div className="min-w-0">
                         <p className="text-[10px] font-mono uppercase text-[#8c6d48] truncate">
                           {selectedSection.key}
@@ -1483,8 +2489,8 @@ export default function AdminDashboardClient({
                     </div>
 
                     <div className="p-4 space-y-3">
-                      <div>
-                        <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256] mb-1">
+                      <div className="space-y-1">
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
                           Admin Label
                         </label>
                         <input
@@ -1510,8 +2516,8 @@ export default function AdminDashboardClient({
                           className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
                         />
                         <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <label className="block text-[10px] text-[#6b6256] mb-0.5">
+                          <div className="space-y-0.5">
+                            <label className="block text-[10px] text-[#6b6256]">
                               Font Size (px)
                             </label>
                             <input
@@ -1527,8 +2533,8 @@ export default function AdminDashboardClient({
                               className="w-full px-2 py-1 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
                             />
                           </div>
-                          <div>
-                            <label className="block text-[10px] text-[#6b6256] mb-0.5">
+                          <div className="space-y-0.5">
+                            <label className="block text-[10px] text-[#6b6256]">
                               Style
                             </label>
                             <select
@@ -1550,8 +2556,8 @@ export default function AdminDashboardClient({
                           </div>
                         </div>
 
-                        <div>
-                          <label className="block text-[10px] text-[#6b6256] mb-0.5">
+                        <div className="space-y-0.5">
+                          <label className="block text-[10px] text-[#6b6256]">
                             Text Color
                           </label>
                           <div className="flex items-center gap-2">
@@ -1584,7 +2590,7 @@ export default function AdminDashboardClient({
                         </div>
                       </div>
 
-                      {/* UNIVERSAL DIVIDER (ON/OFF, WIDTH, THICKNESS) */}
+                      {/* UNIVERSAL DIVIDER */}
                       <div className="space-y-2 pt-2 border-t border-[#f0ece3]">
                         <div className="flex items-center justify-between">
                           <p className="text-[10px] font-bold uppercase tracking-wider text-[#8c6d48]">
@@ -1608,8 +2614,8 @@ export default function AdminDashboardClient({
                         </div>
                         {Boolean(parsedEditorObj.showDivider) && (
                           <div className="space-y-2">
-                            <div>
-                              <label className="block text-[10px] text-[#6b6256] mb-0.5">
+                            <div className="space-y-0.5">
+                              <label className="block text-[10px] text-[#6b6256]">
                                 Width (
                                 {Number(parsedEditorObj.dividerWidth ?? 100)}
                                 %)
@@ -1629,8 +2635,8 @@ export default function AdminDashboardClient({
                                 className="w-full accent-[#8c6d48]"
                               />
                             </div>
-                            <div>
-                              <label className="block text-[10px] text-[#6b6256] mb-0.5">
+                            <div className="space-y-0.5">
+                              <label className="block text-[10px] text-[#6b6256]">
                                 Thickness (
                                 {Number(
                                   parsedEditorObj.dividerThickness ?? 1
@@ -1656,7 +2662,7 @@ export default function AdminDashboardClient({
                         )}
                       </div>
 
-                      {/* UNIVERSAL BACKGROUND COLOR / IMAGE */}
+                      {/* UNIVERSAL BACKGROUND */}
                       <div className="space-y-2 pt-2 border-t border-[#f0ece3]">
                         <p className="text-[10px] font-bold uppercase tracking-wider text-[#8c6d48]">
                           Background
@@ -1756,7 +2762,7 @@ export default function AdminDashboardClient({
                         />
                       </div>
 
-                      {/* UNIVERSAL OVERLAY COLOR (ON/OFF + OPACITY %) */}
+                      {/* UNIVERSAL OVERLAY COLOR */}
                       <div className="space-y-2 pt-2 border-t border-[#f0ece3]">
                         <div className="flex items-center justify-between">
                           <p className="text-[10px] font-bold uppercase tracking-wider text-[#8c6d48]">
@@ -1808,8 +2814,8 @@ export default function AdminDashboardClient({
                               />
                             </div>
 
-                            <div>
-                              <label className="block text-[10px] text-[#6b6256] mb-0.5">
+                            <div className="space-y-0.5">
+                              <label className="block text-[10px] text-[#6b6256]">
                                 Overlay Opacity (
                                 {Number(parsedEditorObj.overlayOpacity ?? 40)}
                                 %)
@@ -1836,8 +2842,8 @@ export default function AdminDashboardClient({
                       {/* FEATURED PRODUCT EXTRA SETTINGS */}
                       {isFeaturedProduct && (
                         <div className="space-y-3 pt-2 border-t border-[#f0ece3]">
-                          <div>
-                            <label className="block text-[10px] font-bold uppercase tracking-wider text-[#8c6d48] mb-1">
+                          <div className="space-y-1">
+                            <label className="block text-[10px] font-bold uppercase tracking-wider text-[#8c6d48]">
                               Select Product (Database)
                             </label>
                             <select
@@ -1976,8 +2982,8 @@ export default function AdminDashboardClient({
                             <p className="text-[10px] font-bold uppercase tracking-wider text-[#8c6d48]">
                               Card Style
                             </p>
-                            <div>
-                              <label className="block text-[10px] text-[#6b6256] mb-0.5">
+                            <div className="space-y-0.5">
+                              <label className="block text-[10px] text-[#6b6256]">
                                 Round Corner (
                                 {Number(parsedEditorObj.cardRadius ?? 12)}px)
                               </label>
@@ -2027,8 +3033,8 @@ export default function AdminDashboardClient({
                               )}
                             </div>
 
-                            <div>
-                              <label className="block text-[10px] text-[#6b6256] mb-0.5">
+                            <div className="space-y-0.5">
+                              <label className="block text-[10px] text-[#6b6256]">
                                 Shadow
                               </label>
                               <select
@@ -2067,8 +3073,8 @@ export default function AdminDashboardClient({
                               const currentSlot = currentCards[slotIdx] ?? null;
 
                               return (
-                                <div key={slotIdx}>
-                                  <label className="block text-[10px] font-semibold text-[#4a4238] mb-0.5">
+                                <div key={slotIdx} className="space-y-0.5">
+                                  <label className="block text-[10px] font-semibold text-[#4a4238]">
                                     Card {slotIdx + 1} Product
                                   </label>
                                   <select
@@ -2117,8 +3123,243 @@ export default function AdminDashboardClient({
                         </div>
                       )}
 
-                      {/* EDITORIAL CATEGORIES EXTRA SETTINGS */}
-                      {selectedSection.type === "EDITORIAL_CATEGORIES" && (
+                      {/* HERO 4 CARDS SETTINGS (BG IMAGE + OVERLAY FULL/LEFT/RIGHT) */}
+                      {selectedSection.type === "HERO_3D" && (
+                        <div className="space-y-3 pt-2 border-t border-[#f0ece3]">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-[#8c6d48]">
+                            Hero Cards (Background &amp; Overlay)
+                          </p>
+                          {(Array.isArray(parsedEditorObj.blocks) &&
+                          (parsedEditorObj.blocks as unknown[]).length > 0
+                            ? (parsedEditorObj.blocks as Array<
+                                Record<string, unknown>
+                              >)
+                            : INITIAL_HERO_CONFIG.blocks.map((b) => ({
+                                ...(b as unknown as Record<string, unknown>),
+                              }))
+                          ).map((blk, cardIdx, allBlocks) => {
+                            const patchCard = (
+                              patch: Record<string, unknown>
+                            ) => {
+                              const nextBlocks = allBlocks.map((item, i) =>
+                                i === cardIdx ? { ...item, ...patch } : item
+                              );
+                              updateNestedFields({ blocks: nextBlocks });
+                            };
+
+                            return (
+                              <div
+                                key={String(blk.id ?? cardIdx)}
+                                className="p-2.5 rounded-lg bg-[#faf8f4] border border-[#e5dfd3] space-y-2"
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-[11px] font-bold text-[#1a1714] uppercase">
+                                    {cardIdx + 1}. {String(blk.title ?? "Card")}
+                                  </span>
+                                  <div className="flex items-center gap-1">
+                                    {Boolean(blk.bgImage) && (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          patchCard({ bgImage: "" })
+                                        }
+                                        className="px-1.5 py-0.5 rounded bg-red-50 text-red-700 text-[10px] font-bold"
+                                      >
+                                        Clear
+                                      </button>
+                                    )}
+                                    <label className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#1a1714] hover:bg-[#8c6d48] text-white text-[10px] font-bold cursor-pointer">
+                                      <Upload className="w-2.5 h-2.5" />
+                                      Upload
+                                      <input
+                                        type="file"
+                                        accept="image/*"
+                                        disabled={uploadingImage}
+                                        onChange={(e) => {
+                                          const file = e.target.files?.[0];
+                                          if (file)
+                                            handleHeroCardBgUpload(
+                                              cardIdx,
+                                              file
+                                            );
+                                          e.target.value = "";
+                                        }}
+                                        className="hidden"
+                                      />
+                                    </label>
+                                  </div>
+                                </div>
+
+                                {mediaList.length > 0 && (
+                                  <select
+                                    value={
+                                      mediaList.some(
+                                        (m) => m.url === blk.bgImage
+                                      )
+                                        ? String(blk.bgImage)
+                                        : ""
+                                    }
+                                    onChange={(e) =>
+                                      patchCard({ bgImage: e.target.value })
+                                    }
+                                    className="w-full px-2 py-1 text-[11px] bg-white border border-[#dcd4c5] rounded"
+                                  >
+                                    <option value="">
+                                      -- Pick card bg from Files --
+                                    </option>
+                                    {mediaList.map((m) => (
+                                      <option key={m.id} value={m.url}>
+                                        {m.fileName}
+                                      </option>
+                                    ))}
+                                  </select>
+                                )}
+
+                                <input
+                                  type="text"
+                                  value={String(blk.bgImage ?? "")}
+                                  onChange={(e) =>
+                                    patchCard({ bgImage: e.target.value })
+                                  }
+                                  placeholder="Card background image URL..."
+                                  className="w-full px-2 py-1 text-[11px] bg-white border border-[#dcd4c5] rounded"
+                                />
+
+                                <div className="flex items-center justify-between pt-1">
+                                  <span className="text-[10px] font-semibold text-[#4a4238]">
+                                    Color Overlay
+                                  </span>
+                                  <label className="inline-flex items-center gap-1 text-[10px] font-bold cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={Boolean(
+                                        blk.overlayEnabled ?? false
+                                      )}
+                                      onChange={(e) =>
+                                        patchCard({
+                                          overlayEnabled: e.target.checked,
+                                        })
+                                      }
+                                      className="accent-[#8c6d48]"
+                                    />
+                                    {blk.overlayEnabled ? "ON" : "OFF"}
+                                  </label>
+                                </div>
+
+                                {Boolean(blk.overlayEnabled) && (
+                                  <div className="space-y-1.5">
+                                    <div className="flex items-center gap-1.5">
+                                      <input
+                                        type="color"
+                                        value={String(
+                                          blk.overlayColor || "#fcfbf9"
+                                        )}
+                                        onChange={(e) =>
+                                          patchCard({
+                                            overlayColor: e.target.value,
+                                          })
+                                        }
+                                        className="h-6 w-8 rounded border border-[#dcd4c5] cursor-pointer bg-white p-0.5"
+                                      />
+                                      <input
+                                        type="text"
+                                        value={String(
+                                          blk.overlayColor || "#fcfbf9"
+                                        )}
+                                        onChange={(e) =>
+                                          patchCard({
+                                            overlayColor: e.target.value,
+                                          })
+                                        }
+                                        className="flex-1 px-2 py-1 text-[11px] font-mono bg-white border border-[#dcd4c5] rounded"
+                                      />
+                                    </div>
+
+                                    <div className="grid grid-cols-3 gap-1">
+                                      {(["full", "left", "right"] as const).map(
+                                        (mode) => (
+                                          <button
+                                            key={mode}
+                                            type="button"
+                                            onClick={() =>
+                                              patchCard({ overlayType: mode })
+                                            }
+                                            className={`py-1 rounded text-[10px] font-bold capitalize border transition-colors ${
+                                              (blk.overlayType ?? "left") ===
+                                              mode
+                                                ? "bg-[#241307] text-white border-[#241307]"
+                                                : "bg-white text-[#4a4238] border-[#dcd4c5]"
+                                            }`}
+                                          >
+                                            {mode}
+                                          </button>
+                                        )
+                                      )}
+                                    </div>
+
+                                    <div className="space-y-0.5 pt-0.5">
+                                      <label className="block text-[10px] text-[#6b6256]">
+                                        Opacity (
+                                        {Number(blk.overlayOpacity ?? 80)}%)
+                                      </label>
+                                      <input
+                                        type="range"
+                                        min={0}
+                                        max={100}
+                                        value={Number(blk.overlayOpacity ?? 80)}
+                                        onChange={(e) =>
+                                          patchCard({
+                                            overlayOpacity: Number(
+                                              e.target.value
+                                            ),
+                                          })
+                                        }
+                                        className="w-full accent-[#8c6d48]"
+                                      />
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* BRAND MARQUEE LOGO SIZE */}
+                      {selectedSection.type === "BRAND_MARQUEE" && (
+                        <div className="space-y-2 pt-2 border-t border-[#f0ece3]">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-[#8c6d48]">
+                            Brand Logo Size
+                          </p>
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between text-[10px] text-[#6b6256]">
+                              <span>Logo Height</span>
+                              <span className="font-mono font-bold text-[#1a1714]">
+                                {Number(parsedEditorObj.logoSize ?? 36)}px
+                              </span>
+                            </div>
+                            <input
+                              type="range"
+                              min={24}
+                              max={96}
+                              value={Number(parsedEditorObj.logoSize ?? 36)}
+                              onChange={(e) =>
+                                updateNestedFields({
+                                  logoSize: Number(e.target.value),
+                                })
+                              }
+                              className="w-full accent-[#8c6d48]"
+                            />
+                            <p className="text-[10px] text-[#6b6256]">
+                              Ukuran teks, padding, dan tinggi pita marquee mengikuti ukuran logo.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* STORY & COLLECTION VISIBILITY SETTINGS */}
+                      {(selectedSection.type === "EDITORIAL_CATEGORIES" ||
+                        selectedSection.type === "COLLECTION_SECTION") && (
                         <div className="space-y-2 pt-2 border-t border-[#f0ece3]">
                           <p className="text-[10px] font-bold uppercase tracking-wider text-[#8c6d48]">
                             Visibility Access
@@ -2127,7 +3368,9 @@ export default function AdminDashboardClient({
                             <span>Only visible for customer</span>
                             <input
                               type="checkbox"
-                              checked={Boolean(parsedEditorObj.onlyVisibleForCustomer ?? false)}
+                              checked={Boolean(
+                                parsedEditorObj.onlyVisibleForCustomer ?? false
+                              )}
                               onChange={(e) =>
                                 updateNestedFields({
                                   onlyVisibleForCustomer: e.target.checked,
@@ -2137,53 +3380,52 @@ export default function AdminDashboardClient({
                             />
                           </label>
                           <p className="text-[10px] text-[#6b6256]">
-                            Jika aktif, section hanya tampil untuk customer yang sudah login.
+                            Jika aktif, section hanya tampil untuk customer yang
+                            sudah login.
                           </p>
                         </div>
                       )}
 
-                      {parsedEditorObj && (
+                      {extraStringFields.length > 0 && (
                         <div className="space-y-2 pt-2 border-t border-[#f0ece3]">
                           <p className="text-[10px] font-bold uppercase tracking-wider text-[#8c6d48]">
                             Content Fields
                           </p>
-                          {Object.entries(parsedEditorObj).map(([k, v]) => {
-                            if (typeof v === "string") {
-                              const isLong = v.length > 70;
-                              return (
-                                <div key={k}>
-                                  <label className="block text-[10px] font-semibold text-[#4a4238] mb-0.5 capitalize">
-                                    {k}
-                                  </label>
-                                  {isLong ? (
-                                    <textarea
-                                      rows={3}
-                                      value={v}
-                                      onChange={(e) =>
-                                        updateSimpleField(k, e.target.value)
-                                      }
-                                      className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
-                                    />
-                                  ) : (
-                                    <input
-                                      type="text"
-                                      value={v}
-                                      onChange={(e) =>
-                                        updateSimpleField(k, e.target.value)
-                                      }
-                                      className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
-                                    />
-                                  )}
-                                </div>
-                              );
-                            }
-                            return null;
+                          {extraStringFields.map(([k, v]) => {
+                            const strVal = String(v);
+                            const isLong = strVal.length > 70;
+                            return (
+                              <div key={k} className="space-y-0.5">
+                                <label className="block text-[10px] font-semibold text-[#4a4238] capitalize">
+                                  {k}
+                                </label>
+                                {isLong ? (
+                                  <textarea
+                                    rows={3}
+                                    value={strVal}
+                                    onChange={(e) =>
+                                      updateSimpleField(k, e.target.value)
+                                    }
+                                    className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
+                                  />
+                                ) : (
+                                  <input
+                                    type="text"
+                                    value={strVal}
+                                    onChange={(e) =>
+                                      updateSimpleField(k, e.target.value)
+                                    }
+                                    className="w-full px-2.5 py-1.5 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
+                                  />
+                                )}
+                              </div>
+                            );
                           })}
                         </div>
                       )}
 
-                      <div className="pt-2 border-t border-[#f0ece3]">
-                        <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256] mb-1">
+                      <div className="pt-2 border-t border-[#f0ece3] space-y-1">
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
                           Payload (JSON)
                         </label>
                         <textarea
@@ -2206,578 +3448,591 @@ export default function AdminDashboardClient({
           ) : (
             <div className="flex-1 min-h-0 overflow-y-auto">
               {activeTab === "orders" ? (
-            <div className="max-w-6xl mx-auto space-y-6">
-              <div className="bg-white border border-[#e0dbd0] rounded-xl overflow-hidden shadow-xs">
-                <div className="px-5 py-4 border-b border-[#ece8df] flex items-center justify-between">
-                  <h2 className="text-sm font-bold text-[#1a1714]">
-                    Orders ({orders.length})
-                  </h2>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="border-b border-[#ece8df] bg-[#faf8f4] text-[10px] uppercase tracking-wider text-[#6b6256]">
-                        <th className="py-3 px-4">Order</th>
-                        <th className="py-3 px-4">Customer</th>
-                        <th className="py-3 px-4">Date</th>
-                        <th className="py-3 px-4">Total</th>
-                        <th className="py-3 px-4">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[#f0ece3] text-xs">
-                      {orders.map((ord) => (
-                        <tr key={ord.id} className="hover:bg-[#faf8f4]">
-                          <td className="py-3 px-4 font-bold text-[#1a1714]">
-                            {ord.orderNumber}
-                          </td>
-                          <td className="py-3 px-4 text-[#4a4238]">
-                            {ord.customer}
-                          </td>
-                          <td className="py-3 px-4 text-[#6b6256]">
-                            {ord.date}
-                          </td>
-                          <td className="py-3 px-4 font-bold text-[#1a1714]">
-                            ${ord.total.toFixed(2)}
-                          </td>
-                          <td className="py-3 px-4">
-                            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900">
-                              {ord.status}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          ) : activeTab === "brands" ? (
-            <div className="max-w-5xl mx-auto space-y-6">
-              <form
-                onSubmit={handleAddBrand}
-                className="bg-white border border-[#e0dbd0] rounded-xl p-5 shadow-xs flex flex-col sm:flex-row items-end gap-4"
-              >
-                <div className="flex-1 w-full">
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256] mb-1.5">
-                    Brand Name
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={newBrandName}
-                    onChange={(e) => setNewBrandName(e.target.value)}
-                    placeholder="e.g. Padrón Cigars"
-                    className="w-full px-3.5 py-2 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
-                  />
-                </div>
-                <div className="flex-1 w-full">
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256] mb-1.5">
-                    Logo URL / Public Path
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={newBrandLogo}
-                    onChange={(e) => setNewBrandLogo(e.target.value)}
-                    placeholder="/brands/padron.png"
-                    className="w-full px-3.5 py-2 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="inline-flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-lg bg-[#1a1714] hover:bg-[#8c6d48] text-white text-xs font-bold transition-colors w-full sm:w-auto"
-                >
-                  <Plus className="w-4 h-4" />
-                  Add Brand
-                </button>
-              </form>
-
-              <div className="bg-white border border-[#e0dbd0] rounded-xl overflow-hidden shadow-xs">
-                <div className="px-5 py-4 border-b border-[#ece8df]">
-                  <h2 className="text-sm font-bold text-[#1a1714]">
-                    All Brands ({brands.length})
-                  </h2>
-                </div>
-
-                <div className="divide-y divide-[#f0ece3]">
-                  {brands.map((brand) => (
-                    <div
-                      key={brand.id}
-                      className="px-5 py-3 flex items-center justify-between gap-4 hover:bg-[#faf8f4]"
-                    >
-                      <div className="flex items-center gap-4 min-w-0">
-                        <div className="w-12 h-10 bg-[#fdfbf7] border border-[#e6e2d8] rounded flex items-center justify-center p-1 shrink-0">
-                          <img
-                            src={brand.logoUrl}
-                            alt={brand.name}
-                            className="max-h-full max-w-full object-contain"
-                          />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-xs font-bold text-[#1a1714] truncate">
-                            {brand.name}
-                          </p>
-                          <p className="text-[10px] font-mono text-[#6b6256] truncate">
-                            {brand.logoUrl}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => handleToggleBrand(brand)}
-                          className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                            brand.isActive
-                              ? "bg-emerald-100 text-emerald-800"
-                              : "bg-stone-200 text-stone-600"
-                          }`}
-                        >
-                          {brand.isActive ? "Active" : "Hidden"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteBrand(brand)}
-                          className="p-1.5 text-[#6b6256] hover:text-red-600 transition-colors"
-                          title="Delete Brand"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
+                <div className="max-w-6xl mx-auto space-y-6">
+                  <div className="bg-white border border-[#e0dbd0] rounded-xl overflow-hidden shadow-xs">
+                    <div className="px-5 py-4 border-b border-[#ece8df] flex items-center justify-between">
+                      <h2 className="text-sm font-bold text-[#1a1714]">
+                        Orders ({orders.length})
+                      </h2>
                     </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          ) : activeTab === "categories" ? (
-            <div className="max-w-5xl mx-auto space-y-6">
-              <form
-                onSubmit={handleAddCategory}
-                className="bg-white border border-[#e0dbd0] rounded-xl p-5 shadow-xs flex flex-col sm:flex-row items-end gap-4"
-              >
-                <div className="flex-1 w-full">
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256] mb-1.5">
-                    Category Name
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={newCategoryName}
-                    onChange={(e) => setNewCategoryName(e.target.value)}
-                    placeholder="e.g. Premium Cigars"
-                    className="w-full px-3.5 py-2 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
-                  />
-                </div>
-                <label className="flex items-center gap-2 text-xs font-semibold text-[#4a4238] pb-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={newCategoryPublic}
-                    onChange={(e) => setNewCategoryPublic(e.target.checked)}
-                    className="accent-[#8c6d48]"
-                  />
-                  Public on Storefront
-                </label>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="inline-flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-lg bg-[#1a1714] hover:bg-[#8c6d48] text-white text-xs font-bold transition-colors w-full sm:w-auto"
-                >
-                  <Plus className="w-4 h-4" />
-                  Add Category
-                </button>
-              </form>
-
-              <div className="bg-white border border-[#e0dbd0] rounded-xl overflow-hidden shadow-xs">
-                <div className="px-5 py-4 border-b border-[#ece8df]">
-                  <h2 className="text-sm font-bold text-[#1a1714]">
-                    All Categories ({categories.length})
-                  </h2>
-                </div>
-
-                {categories.length === 0 ? (
-                  <div className="p-12 text-center text-xs text-[#6b6256]">
-                    No categories yet. Create your first category above before
-                    adding products.
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="border-b border-[#ece8df] bg-[#faf8f4] text-[10px] uppercase tracking-wider text-[#6b6256]">
+                            <th className="py-3 px-4">Order</th>
+                            <th className="py-3 px-4">Customer</th>
+                            <th className="py-3 px-4">Date</th>
+                            <th className="py-3 px-4">Total</th>
+                            <th className="py-3 px-4">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#f0ece3] text-xs">
+                          {orders.map((ord) => (
+                            <tr key={ord.id} className="hover:bg-[#faf8f4]">
+                              <td className="py-3 px-4 font-bold text-[#1a1714]">
+                                {ord.orderNumber}
+                              </td>
+                              <td className="py-3 px-4 text-[#4a4238]">
+                                {ord.customer}
+                              </td>
+                              <td className="py-3 px-4 text-[#6b6256]">
+                                {ord.date}
+                              </td>
+                              <td className="py-3 px-4 font-bold text-[#1a1714]">
+                                ${ord.total.toFixed(2)}
+                              </td>
+                              <td className="py-3 px-4">
+                                <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900">
+                                  {ord.status}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
-                ) : (
-                  <div className="divide-y divide-[#f0ece3]">
-                    {categories.map((cat) => (
-                      <div
-                        key={cat.id}
-                        className="px-5 py-3.5 flex items-center justify-between gap-4 hover:bg-[#faf8f4]"
-                      >
-                        <div>
-                          <p className="text-xs font-bold text-[#1a1714]">
-                            {cat.name}
-                          </p>
-                          <p className="text-[10px] text-[#6b6256]">
-                            {cat._count?.products ?? 0} assigned products
-                          </p>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleToggleCategoryField(cat, "isPublic")
-                            }
-                            className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                              cat.isPublic
-                                ? "bg-amber-100 text-amber-900"
-                                : "bg-stone-200 text-stone-600"
-                            }`}
-                          >
-                            {cat.isPublic ? "Public" : "Private"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleToggleCategoryField(cat, "isActive")
-                            }
-                            className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                              cat.isActive
-                                ? "bg-emerald-100 text-emerald-800"
-                                : "bg-stone-200 text-stone-600"
-                            }`}
-                          >
-                            {cat.isActive ? "Active" : "Inactive"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteCategory(cat)}
-                            className="p-1.5 text-[#6b6256] hover:text-red-600 transition-colors"
-                            title="Delete Category"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : activeTab === "collections" ? (
-            <div className="max-w-6xl mx-auto space-y-5">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="relative w-full sm:w-80">
-                  <Search className="w-4 h-4 text-[#8c6d48] absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    value={collectionSearch}
-                    onChange={(e) => setCollectionSearch(e.target.value)}
-                    placeholder="Search collections..."
-                    className="w-full pl-10 pr-4 py-2 text-xs bg-white border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
-                  />
                 </div>
-
-                <form
-                  onSubmit={handleAddCollection}
-                  className="flex flex-wrap items-center gap-2"
-                >
-                  <input
-                    type="text"
-                    required
-                    value={newCollectionTitle}
-                    onChange={(e) => setNewCollectionTitle(e.target.value)}
-                    placeholder="Collection title..."
-                    className="px-3 py-2 text-xs bg-white border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
-                  />
-                  <input
-                    type="text"
-                    value={newCollectionConditions}
-                    onChange={(e) => setNewCollectionConditions(e.target.value)}
-                    placeholder="Conditions (optional)"
-                    className="px-3 py-2 text-xs bg-white border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
-                  />
-                  <button
-                    type="submit"
-                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#1a1714] hover:bg-[#8c6d48] text-white text-xs font-bold transition-colors"
+              ) : activeTab === "brands" ? (
+                <div className="max-w-5xl mx-auto space-y-6">
+                  <form
+                    onSubmit={handleAddBrand}
+                    className="bg-white border border-[#e0dbd0] rounded-xl p-5 shadow-xs flex flex-col sm:flex-row items-end gap-4"
                   >
-                    <Plus className="w-3.5 h-3.5" />
-                    Add collection
-                  </button>
-                </form>
-              </div>
+                    <div className="flex-1 w-full space-y-1.5">
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
+                        Brand Name
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={newBrandName}
+                        onChange={(e) => setNewBrandName(e.target.value)}
+                        placeholder="e.g. Padrón Cigars"
+                        className="w-full px-3.5 py-2 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
+                      />
+                    </div>
+                    <div className="flex-1 w-full space-y-1.5">
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
+                        Logo URL / Public Path
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={newBrandLogo}
+                        onChange={(e) => setNewBrandLogo(e.target.value)}
+                        placeholder="/brands/padron.png"
+                        className="w-full px-3.5 py-2 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={saving}
+                      className="inline-flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-lg bg-[#1a1714] hover:bg-[#8c6d48] text-white text-xs font-bold transition-colors w-full sm:w-auto"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Add Brand
+                    </button>
+                  </form>
 
-              <div className="bg-white border border-[#e0dbd0] rounded-xl overflow-hidden shadow-xs">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="border-b border-[#ece8df] bg-[#faf8f4] text-[11px] font-semibold text-[#574d42]">
-                        <th className="py-3 px-4">Title</th>
-                        <th className="py-3 px-4 text-right">Products</th>
-                        <th className="py-3 px-4">Conditions</th>
-                        <th className="py-3 px-4 text-right">Sales channels</th>
-                        <th className="py-3 px-4 text-right">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[#f0ece3] text-xs">
-                      {filteredCollections.map((col) => (
-                        <tr key={col.id} className="hover:bg-[#faf8f4]">
-                          <td className="py-3 px-4 font-bold text-[#1a1714]">
-                            {col.title}
-                          </td>
-                          <td className="py-3 px-4 text-right text-[#4a4238]">
-                            {col.productsCount}
-                          </td>
-                          <td className="py-3 px-4 text-[#574d42]">
-                            {col.conditions}
-                          </td>
-                          <td className="py-3 px-4 text-right text-[#4a4238]">
-                            {col.salesChannels}
-                          </td>
-                          <td className="py-3 px-4 text-right">
+                  <div className="bg-white border border-[#e0dbd0] rounded-xl overflow-hidden shadow-xs">
+                    <div className="px-5 py-4 border-b border-[#ece8df]">
+                      <h2 className="text-sm font-bold text-[#1a1714]">
+                        All Brands ({brands.length})
+                      </h2>
+                    </div>
+
+                    <div className="divide-y divide-[#f0ece3]">
+                      {brands.map((brand) => (
+                        <div
+                          key={brand.id}
+                          className="px-5 py-3 flex items-center justify-between gap-4 hover:bg-[#faf8f4]"
+                        >
+                          <div className="flex items-center gap-4 min-w-0">
+                            <div className="w-12 h-10 bg-[#fdfbf7] border border-[#e6e2d8] rounded flex items-center justify-center p-1 shrink-0">
+                              <img
+                                src={brand.logoUrl}
+                                alt={brand.name}
+                                className="max-h-full max-w-full object-contain"
+                              />
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-[#1a1714] truncate">
+                                {brand.name}
+                              </p>
+                              <p className="text-[10px] font-mono text-[#6b6256] truncate">
+                                {brand.logoUrl}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0">
                             <button
                               type="button"
-                              onClick={() => handleDeleteCollection(col.id)}
-                              className="p-1 text-[#6b6256] hover:text-red-600"
-                              title="Delete Collection"
+                              onClick={() => handleToggleBrand(brand)}
+                              className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                                brand.isActive
+                                  ? "bg-emerald-100 text-emerald-800"
+                                  : "bg-stone-200 text-stone-600"
+                              }`}
                             >
-                              <Trash2 className="w-3.5 h-3.5" />
+                              {brand.isActive ? "Active" : "Hidden"}
                             </button>
-                          </td>
-                        </tr>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteBrand(brand)}
+                              className="p-1.5 text-[#6b6256] hover:text-red-600 transition-colors"
+                              title="Delete Brand"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
                       ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          ) : activeTab === "files" ? (
-            <div className="max-w-6xl mx-auto space-y-6">
-              <div className="bg-white border border-[#e0dbd0] rounded-xl p-5 shadow-xs flex flex-wrap items-center justify-between gap-4">
-                <div>
-                  <h2 className="text-sm font-bold text-[#1a1714]">
-                    Files ({mediaList.length})
-                  </h2>
-                  <p className="text-xs text-[#6b6256] mt-0.5">
-                    Upload atau pilih file untuk dipakai pada Product atau
-                    bagian web lainnya.
-                  </p>
-                </div>
-
-                <label className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[#1a1714] hover:bg-[#8c6d48] text-white text-xs font-bold cursor-pointer transition-colors">
-                  <Upload className="w-4 h-4" />
-                  {uploadingImage ? "Uploading..." : "Upload File"}
-                  <input
-                    type="file"
-                    accept="image/*"
-                    disabled={uploadingImage}
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) handleImageFileUpload(file);
-                      e.target.value = "";
-                    }}
-                    className="hidden"
-                  />
-                </label>
-              </div>
-
-              <div className="bg-white border border-[#e0dbd0] rounded-xl overflow-hidden shadow-xs">
-                {mediaList.length === 0 ? (
-                  <div className="p-12 text-center text-xs text-[#6b6256]">
-                    Belum ada file tersimpan. Klik &ldquo;Upload File&rdquo;
-                    untuk menambahkan gambar.
+                    </div>
                   </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 p-5">
-                    {mediaList.map((file) => (
-                      <div
-                        key={file.id}
-                        className="border border-[#e5dfd3] rounded-xl p-3 bg-[#fdfbf7] flex flex-col justify-between gap-3"
-                      >
-                        <div className="aspect-square rounded-lg bg-white border border-[#ece8df] overflow-hidden flex items-center justify-center">
-                          <img
-                            src={file.url}
-                            alt={file.fileName}
-                            className="w-full h-full object-contain"
-                          />
-                        </div>
-                        <div className="space-y-1 min-w-0">
-                          <p className="text-xs font-bold text-[#1a1714] truncate">
-                            {file.fileName}
-                          </p>
-                          <p className="text-[10px] text-[#6b6256]">
-                            {Math.max(1, Math.round(file.sizeByte / 1024))} KB
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => handleCopyUrl(file.url)}
-                            className="flex-1 inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#ebe8e1] hover:bg-[#dcd7cc] text-[#1a1714] text-[11px] font-bold transition-colors"
-                          >
-                            <Copy className="w-3 h-3" />
-                            Copy URL
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setProductForm({
-                                ...EMPTY_PRODUCT_FORM,
-                                categoryId: categories[0]
-                                  ? String(categories[0].id)
-                                  : "",
-                                image: file.url,
-                              });
-                              setShowProductModal(true);
-                            }}
-                            className="px-2.5 py-1.5 rounded-lg bg-[#1a1714] hover:bg-[#8c6d48] text-white text-[11px] font-bold transition-colors"
-                          >
-                            Use in Product
-                          </button>
-                        </div>
+                </div>
+              ) : activeTab === "categories" ? (
+                <div className="max-w-5xl mx-auto space-y-6">
+                  <form
+                    onSubmit={handleAddCategory}
+                    className="bg-white border border-[#e0dbd0] rounded-xl p-5 shadow-xs flex flex-col sm:flex-row items-end gap-4"
+                  >
+                    <div className="flex-1 w-full space-y-1.5">
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
+                        Category Name
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={newCategoryName}
+                        onChange={(e) => setNewCategoryName(e.target.value)}
+                        placeholder="e.g. Premium Cigars"
+                        className="w-full px-3.5 py-2 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
+                      />
+                    </div>
+                    <label className="flex items-center gap-2 text-xs font-semibold text-[#4a4238] pb-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={newCategoryPublic}
+                        onChange={(e) => setNewCategoryPublic(e.target.checked)}
+                        className="accent-[#8c6d48]"
+                      />
+                      Public on Storefront
+                    </label>
+                    <button
+                      type="submit"
+                      disabled={saving}
+                      className="inline-flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-lg bg-[#1a1714] hover:bg-[#8c6d48] text-white text-xs font-bold transition-colors w-full sm:w-auto"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Add Category
+                    </button>
+                  </form>
+
+                  <div className="bg-white border border-[#e0dbd0] rounded-xl overflow-hidden shadow-xs">
+                    <div className="px-5 py-4 border-b border-[#ece8df]">
+                      <h2 className="text-sm font-bold text-[#1a1714]">
+                        All Categories ({categories.length})
+                      </h2>
+                    </div>
+
+                    {categories.length === 0 ? (
+                      <div className="p-12 text-center text-xs text-[#6b6256]">
+                        No categories yet. Create your first category above
+                        before adding products.
                       </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : (
-            <div className="max-w-6xl mx-auto space-y-6">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="relative w-full sm:w-80">
-                  <Search className="w-4 h-4 text-[#8c6d48] absolute left-3.5 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    value={productSearch}
-                    onChange={(e) => setProductSearch(e.target.value)}
-                    placeholder="Search SKU, name, brand, category..."
-                    className="w-full pl-10 pr-4 py-2.5 text-xs bg-white border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
-                  />
-                </div>
-
-                <button
-                  type="button"
-                  onClick={openNewProductModal}
-                  className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg bg-[#1a1714] hover:bg-[#8c6d48] text-white text-xs font-bold transition-colors"
-                >
-                  <Plus className="w-4 h-4" />
-                  Add Product
-                </button>
-              </div>
-
-              <div className="bg-white border border-[#e0dbd0] rounded-xl overflow-hidden shadow-xs">
-                <div className="px-5 py-4 border-b border-[#ece8df] flex items-center justify-between">
-                  <h2 className="text-sm font-bold text-[#1a1714]">
-                    Wholesale Products ({filteredProducts.length})
-                  </h2>
-                </div>
-
-                {filteredProducts.length === 0 ? (
-                  <div className="p-12 text-center text-xs text-[#6b6256]">
-                    No products found. Click &ldquo;Add Product&rdquo; to create
-                    one.
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
-                      <thead>
-                        <tr className="border-b border-[#ece8df] bg-[#faf8f4] text-[10px] uppercase tracking-wider text-[#6b6256]">
-                          <th className="py-3 px-4">Product</th>
-                          <th className="py-3 px-4">Category</th>
-                          <th className="py-3 px-4">Wholesale</th>
-                          <th className="py-3 px-4">QBO Price</th>
-                          <th className="py-3 px-4">Status</th>
-                          <th className="py-3 px-4">Inventory</th>
-                          <th className="py-3 px-4">Product Type</th>
-                          <th className="py-3 px-4">Vendor</th>
-                          <th className="py-3 px-4 text-right">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[#f0ece3] text-xs">
-                        {filteredProducts.map((product) => (
-                          <tr
-                            key={product.id}
-                            className="hover:bg-[#faf8f4] transition-colors"
+                    ) : (
+                      <div className="divide-y divide-[#f0ece3]">
+                        {categories.map((cat) => (
+                          <div
+                            key={cat.id}
+                            className="px-5 py-3.5 flex items-center justify-between gap-4 hover:bg-[#faf8f4]"
                           >
-                            <td className="py-3 px-4">
-                              <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded bg-[#f2efe9] border border-[#e6e2d8] overflow-hidden shrink-0">
-                                  <img
-                                    src={product.image || "/hero-products.jpg"}
-                                    alt={product.name}
-                                    className="w-full h-full object-cover"
-                                  />
-                                </div>
-                                <div>
-                                  <p className="font-bold text-[#1a1714]">
-                                    {product.name}
-                                  </p>
-                                  <p className="text-[10px] font-mono text-[#8c6d48]">
-                                    {product.sku}
-                                    {product.brand ? ` · ${product.brand}` : ""}
-                                  </p>
-                                </div>
-                              </div>
-                            </td>
-                            <td className="py-3 px-4 text-[#4a4238]">
-                              {product.category?.name ?? "—"}
-                            </td>
-                            <td className="py-3 px-4 font-bold text-[#1a1714]">
-                              {product.wholesalePrice !== null
-                                ? `$${product.wholesalePrice.toFixed(2)}`
-                                : "—"}
-                            </td>
-                            <td className="py-3 px-4 text-[#6b6256]">
-                              ${product.quickBooksPrice.toFixed(2)}
-                            </td>
-                            <td className="py-3 px-4">
+                            <div>
+                              <p className="text-xs font-bold text-[#1a1714]">
+                                {cat.name}
+                              </p>
+                              <p className="text-[10px] text-[#6b6256]">
+                                {cat._count?.products ?? 0} assigned products
+                              </p>
+                            </div>
+
+                            <div className="flex items-center gap-2">
                               <button
                                 type="button"
                                 onClick={() =>
-                                  handleToggleProductActive(product)
+                                  handleToggleCategoryField(cat, "isPublic")
                                 }
                                 className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                                  product.isActive
+                                  cat.isPublic
+                                    ? "bg-amber-100 text-amber-900"
+                                    : "bg-stone-200 text-stone-600"
+                                }`}
+                              >
+                                {cat.isPublic ? "Public" : "Private"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleToggleCategoryField(cat, "isActive")
+                                }
+                                className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                                  cat.isActive
                                     ? "bg-emerald-100 text-emerald-800"
                                     : "bg-stone-200 text-stone-600"
                                 }`}
                               >
-                                {product.isActive ? "Active" : "Draft"}
+                                {cat.isActive ? "Active" : "Inactive"}
                               </button>
-                            </td>
-                            <td className="py-3 px-4 text-[#4a4238] whitespace-nowrap">
-                              {product.qboQtyOnHand ?? 0} in stock
-                            </td>
-                            <td className="py-3 px-4 text-[#4a4238]">
-                              {product.productType ||
-                                product.category?.name ||
-                                "—"}
-                            </td>
-                            <td className="py-3 px-4 text-[#4a4238]">
-                              {product.vendor || product.brand || "—"}
-                            </td>
-                            <td className="py-3 px-4 text-right">
-                              <div className="inline-flex items-center gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => openEditProductModal(product)}
-                                  className="p-1.5 text-[#6b6256] hover:text-[#1a1714]"
-                                  title="Edit Product"
-                                >
-                                  <Pencil className="w-4 h-4" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteProduct(product)}
-                                  className="p-1.5 text-[#6b6256] hover:text-red-600"
-                                  title="Delete Product"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteCategory(cat)}
+                                className="p-1.5 text-[#6b6256] hover:text-red-600 transition-colors"
+                                title="Delete Category"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
                         ))}
-                      </tbody>
-                    </table>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            </div>
+                </div>
+              ) : activeTab === "collections" ? (
+                <div className="max-w-6xl mx-auto space-y-5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="relative w-full sm:w-80">
+                      <Search className="w-4 h-4 text-[#8c6d48] absolute left-3.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        value={collectionSearch}
+                        onChange={(e) => setCollectionSearch(e.target.value)}
+                        placeholder="Search collections..."
+                        className="w-full pl-10 pr-4 py-2 text-xs bg-white border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
+                      />
+                    </div>
+
+                    <form
+                      onSubmit={handleAddCollection}
+                      className="flex flex-wrap items-center gap-2"
+                    >
+                      <input
+                        type="text"
+                        required
+                        value={newCollectionTitle}
+                        onChange={(e) => setNewCollectionTitle(e.target.value)}
+                        placeholder="Collection title..."
+                        className="px-3 py-2 text-xs bg-white border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
+                      />
+                      <input
+                        type="text"
+                        value={newCollectionConditions}
+                        onChange={(e) =>
+                          setNewCollectionConditions(e.target.value)
+                        }
+                        placeholder="Conditions (optional)"
+                        className="px-3 py-2 text-xs bg-white border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
+                      />
+                      <button
+                        type="submit"
+                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#1a1714] hover:bg-[#8c6d48] text-white text-xs font-bold transition-colors"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        Add collection
+                      </button>
+                    </form>
+                  </div>
+
+                  <div className="bg-white border border-[#e0dbd0] rounded-xl overflow-hidden shadow-xs">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="border-b border-[#ece8df] bg-[#faf8f4] text-[11px] font-semibold text-[#574d42]">
+                            <th className="py-3 px-4">Title</th>
+                            <th className="py-3 px-4 text-right">Products</th>
+                            <th className="py-3 px-4">Conditions</th>
+                            <th className="py-3 px-4 text-right">
+                              Sales channels
+                            </th>
+                            <th className="py-3 px-4 text-right">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#f0ece3] text-xs">
+                          {filteredCollections.map((col) => (
+                            <tr key={col.id} className="hover:bg-[#faf8f4]">
+                              <td className="py-3 px-4 font-bold text-[#1a1714]">
+                                {col.title}
+                              </td>
+                              <td className="py-3 px-4 text-right text-[#4a4238]">
+                                {col.productsCount}
+                              </td>
+                              <td className="py-3 px-4 text-[#574d42]">
+                                {col.conditions}
+                              </td>
+                              <td className="py-3 px-4 text-right text-[#4a4238]">
+                                {col.salesChannels}
+                              </td>
+                              <td className="py-3 px-4 text-right">
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteCollection(col.id)}
+                                  className="p-1 text-[#6b6256] hover:text-red-600"
+                                  title="Delete Collection"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              ) : activeTab === "files" ? (
+                <div className="max-w-6xl mx-auto space-y-6">
+                  <div className="bg-white border border-[#e0dbd0] rounded-xl p-5 shadow-xs flex flex-wrap items-center justify-between gap-4">
+                    <div className="space-y-0.5">
+                      <h2 className="text-sm font-bold text-[#1a1714]">
+                        Files ({mediaList.length})
+                      </h2>
+                      <p className="text-xs text-[#6b6256]">
+                        Upload atau pilih file untuk dipakai pada Product atau
+                        bagian web lainnya.
+                      </p>
+                    </div>
+
+                    <label className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[#1a1714] hover:bg-[#8c6d48] text-white text-xs font-bold cursor-pointer transition-colors">
+                      <Upload className="w-4 h-4" />
+                      {uploadingImage ? "Uploading..." : "Upload File"}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        disabled={uploadingImage}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) handleImageFileUpload(file);
+                          e.target.value = "";
+                        }}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
+
+                  <div className="bg-white border border-[#e0dbd0] rounded-xl overflow-hidden shadow-xs">
+                    {mediaList.length === 0 ? (
+                      <div className="p-12 text-center text-xs text-[#6b6256]">
+                        Belum ada file tersimpan. Klik &ldquo;Upload File&rdquo;
+                        untuk menambahkan gambar.
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 p-5">
+                        {mediaList.map((file) => (
+                          <div
+                            key={file.id}
+                            className="border border-[#e5dfd3] rounded-xl p-3 bg-[#fdfbf7] flex flex-col justify-between gap-3"
+                          >
+                            <div className="aspect-square rounded-lg bg-white border border-[#ece8df] overflow-hidden flex items-center justify-center">
+                              <img
+                                src={file.url}
+                                alt={file.fileName}
+                                className="w-full h-full object-contain"
+                              />
+                            </div>
+                            <div className="space-y-1 min-w-0">
+                              <p className="text-xs font-bold text-[#1a1714] truncate">
+                                {file.fileName}
+                              </p>
+                              <p className="text-[10px] text-[#6b6256]">
+                                {Math.max(1, Math.round(file.sizeByte / 1024))}{" "}
+                                KB
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleCopyUrl(file.url)}
+                                className="flex-1 inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#ebe8e1] hover:bg-[#dcd7cc] text-[#1a1714] text-[11px] font-bold transition-colors"
+                              >
+                                <Copy className="w-3 h-3" />
+                                Copy URL
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setProductForm({
+                                    ...EMPTY_PRODUCT_FORM,
+                                    categoryId: categories[0]
+                                      ? String(categories[0].id)
+                                      : "",
+                                    image: file.url,
+                                  });
+                                  setShowProductModal(true);
+                                }}
+                                className="px-2.5 py-1.5 rounded-lg bg-[#1a1714] hover:bg-[#8c6d48] text-white text-[11px] font-bold transition-colors"
+                              >
+                                Use in Product
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="max-w-6xl mx-auto space-y-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="relative w-full sm:w-80">
+                      <Search className="w-4 h-4 text-[#8c6d48] absolute left-3.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        value={productSearch}
+                        onChange={(e) => setProductSearch(e.target.value)}
+                        placeholder="Search SKU, name, brand, category..."
+                        className="w-full pl-10 pr-4 py-2.5 text-xs bg-white border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={openNewProductModal}
+                      className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg bg-[#1a1714] hover:bg-[#8c6d48] text-white text-xs font-bold transition-colors"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Add Product
+                    </button>
+                  </div>
+
+                  <div className="bg-white border border-[#e0dbd0] rounded-xl overflow-hidden shadow-xs">
+                    <div className="px-5 py-4 border-b border-[#ece8df] flex items-center justify-between">
+                      <h2 className="text-sm font-bold text-[#1a1714]">
+                        Wholesale Products ({filteredProducts.length})
+                      </h2>
+                    </div>
+
+                    {filteredProducts.length === 0 ? (
+                      <div className="p-12 text-center text-xs text-[#6b6256]">
+                        No products found. Click &ldquo;Add Product&rdquo; to
+                        create one.
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse">
+                          <thead>
+                            <tr className="border-b border-[#ece8df] bg-[#faf8f4] text-[10px] uppercase tracking-wider text-[#6b6256]">
+                              <th className="py-3 px-4">Product</th>
+                              <th className="py-3 px-4">Category</th>
+                              <th className="py-3 px-4">Wholesale</th>
+                              <th className="py-3 px-4">QBO Price</th>
+                              <th className="py-3 px-4">Status</th>
+                              <th className="py-3 px-4">Inventory</th>
+                              <th className="py-3 px-4">Product Type</th>
+                              <th className="py-3 px-4">Vendor</th>
+                              <th className="py-3 px-4 text-right">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-[#f0ece3] text-xs">
+                            {filteredProducts.map((product) => (
+                              <tr
+                                key={product.id}
+                                className="hover:bg-[#faf8f4] transition-colors"
+                              >
+                                <td className="py-3 px-4">
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded bg-[#f2efe9] border border-[#e6e2d8] overflow-hidden shrink-0">
+                                      <img
+                                        src={
+                                          product.image || "/hero-products.jpg"
+                                        }
+                                        alt={product.name}
+                                        className="w-full h-full object-cover"
+                                      />
+                                    </div>
+                                    <div>
+                                      <p className="font-bold text-[#1a1714]">
+                                        {product.name}
+                                      </p>
+                                      <p className="text-[10px] font-mono text-[#8c6d48]">
+                                        {product.sku}
+                                        {product.brand
+                                          ? ` · ${product.brand}`
+                                          : ""}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="py-3 px-4 text-[#4a4238]">
+                                  {product.category?.name ?? "—"}
+                                </td>
+                                <td className="py-3 px-4 font-bold text-[#1a1714]">
+                                  {product.wholesalePrice !== null
+                                    ? `$${product.wholesalePrice.toFixed(2)}`
+                                    : "—"}
+                                </td>
+                                <td className="py-3 px-4 text-[#6b6256]">
+                                  ${product.quickBooksPrice.toFixed(2)}
+                                </td>
+                                <td className="py-3 px-4">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleToggleProductActive(product)
+                                    }
+                                    className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                                      product.isActive
+                                        ? "bg-emerald-100 text-emerald-800"
+                                        : "bg-stone-200 text-stone-600"
+                                    }`}
+                                  >
+                                    {product.isActive ? "Active" : "Draft"}
+                                  </button>
+                                </td>
+                                <td className="py-3 px-4 text-[#4a4238] whitespace-nowrap">
+                                  {product.qboQtyOnHand ?? 0} in stock
+                                </td>
+                                <td className="py-3 px-4 text-[#4a4238]">
+                                  {product.productType ||
+                                    product.category?.name ||
+                                    "—"}
+                                </td>
+                                <td className="py-3 px-4 text-[#4a4238]">
+                                  {product.vendor || product.brand || "—"}
+                                </td>
+                                <td className="py-3 px-4 text-right">
+                                  <div className="inline-flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        openEditProductModal(product)
+                                      }
+                                      className="p-1.5 text-[#6b6256] hover:text-[#1a1714]"
+                                      title="Edit Product"
+                                    >
+                                      <Pencil className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleDeleteProduct(product)
+                                      }
+                                      className="p-1.5 text-[#6b6256] hover:text-red-600"
+                                      title="Delete Product"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
           )}
@@ -2808,8 +4063,8 @@ export default function AdminDashboardClient({
 
             <form onSubmit={handleSaveProduct} className="p-6 space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256] mb-1">
+                <div className="space-y-1">
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
                     SKU *
                   </label>
                   <input
@@ -2824,8 +4079,8 @@ export default function AdminDashboardClient({
                   />
                 </div>
 
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256] mb-1">
+                <div className="space-y-1">
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
                     Category *
                   </label>
                   <select
@@ -2849,8 +4104,8 @@ export default function AdminDashboardClient({
                 </div>
               </div>
 
-              <div>
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256] mb-1">
+              <div className="space-y-1">
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
                   Product Name *
                 </label>
                 <input
@@ -2866,8 +4121,8 @@ export default function AdminDashboardClient({
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256] mb-1">
+                <div className="space-y-1">
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
                     Inventory (Qty)
                   </label>
                   <input
@@ -2883,8 +4138,8 @@ export default function AdminDashboardClient({
                     className="w-full px-3 py-2 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
                   />
                 </div>
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256] mb-1">
+                <div className="space-y-1">
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
                     Product Type
                   </label>
                   <input
@@ -2900,8 +4155,8 @@ export default function AdminDashboardClient({
                     className="w-full px-3 py-2 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
                   />
                 </div>
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256] mb-1">
+                <div className="space-y-1">
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
                     Vendor
                   </label>
                   <input
@@ -2917,8 +4172,8 @@ export default function AdminDashboardClient({
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256] mb-1">
+                <div className="space-y-1">
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
                     Brand
                   </label>
                   <input
@@ -2931,8 +4186,8 @@ export default function AdminDashboardClient({
                     className="w-full px-3 py-2 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
                   />
                 </div>
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256] mb-1">
+                <div className="space-y-1">
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
                     Pack / Box Info
                   </label>
                   <input
@@ -2951,8 +4206,8 @@ export default function AdminDashboardClient({
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256] mb-1">
+                <div className="space-y-1">
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
                     Wholesale Price (USD)
                   </label>
                   <input
@@ -2970,8 +4225,8 @@ export default function AdminDashboardClient({
                     className="w-full px-3 py-2 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
                   />
                 </div>
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256] mb-1">
+                <div className="space-y-1">
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
                     QuickBooks Price (USD)
                   </label>
                   <input
@@ -2992,8 +4247,8 @@ export default function AdminDashboardClient({
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256] mb-1">
+                <div className="space-y-1">
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
                     Origin
                   </label>
                   <input
@@ -3006,8 +4261,8 @@ export default function AdminDashboardClient({
                     className="w-full px-3 py-2 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
                   />
                 </div>
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256] mb-1">
+                <div className="space-y-1">
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
                     Vitola / Shape
                   </label>
                   <input
@@ -3059,8 +4314,8 @@ export default function AdminDashboardClient({
 
                   <div className="flex-1 space-y-2 min-w-0">
                     {mediaList.length > 0 && (
-                      <div>
-                        <label className="block text-[10px] font-semibold text-[#4a4238] mb-1">
+                      <div className="space-y-1">
+                        <label className="block text-[10px] font-semibold text-[#4a4238]">
                           Select from Database Media ({mediaList.length})
                         </label>
                         <select
