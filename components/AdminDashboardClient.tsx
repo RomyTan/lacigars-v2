@@ -196,6 +196,41 @@ const HANDLED_CONTENT_KEYS = new Set([
   "LogoSize",
 ]);
 
+const DEFAULT_COLLECTION_ITEMS = [
+  {
+    id: "premium-cigars",
+    title: "Premium Cigars",
+    count: "140",
+    description: "Hand-rolled Nicaraguan, Dominican...",
+    href: "/products?category=cigars",
+    image: "",
+  },
+  {
+    id: "cigarettes",
+    title: "Cigarettes & Little Cigars",
+    count: "45",
+    description: "High-turnover retail cartons &...",
+    href: "/products?category=cigarettes",
+    image: "",
+  },
+  {
+    id: "vapes",
+    title: "Vapes & E-Cigs",
+    count: "68",
+    description: "Compliant retail displays & top-...",
+    href: "/products?category=vapes",
+    image: "",
+  },
+  {
+    id: "accessories",
+    title: "Accessories",
+    count: "32",
+    description: "Humidors, cutters, torch lighters &...",
+    href: "/products?category=accessories",
+    image: "",
+  },
+];
+
 const DEFAULT_COLLECTION_CONTENT: Record<string, unknown> = {
   heading: "",
   headingSize: 36,
@@ -210,6 +245,11 @@ const DEFAULT_COLLECTION_CONTENT: Record<string, unknown> = {
   overlayColor: "#000000",
   overlayOpacity: 40,
   onlyVisibleForCustomer: false,
+  cardRadius: 16,
+  cardBorder: true,
+  cardBorderColor: "#e5dfd3",
+  cardShadow: "sm",
+  items: DEFAULT_COLLECTION_ITEMS,
 };
 
 function formatSectionLabel(sec: CmsSectionRecord): string {
@@ -640,11 +680,29 @@ export default function AdminDashboardClient({
       Array.isArray(parsedEditorObj?.blocks) &&
       (parsedEditorObj?.blocks as unknown[]).length > 0
         ? [...(parsedEditorObj?.blocks as Array<Record<string, unknown>>)]
-        : INITIAL_HERO_CONFIG.blocks.map((b) => ({ ...b }));
+        : INITIAL_HERO_CONFIG.blocks.map((b) => ({
+            ...(b as unknown as Record<string, unknown>),
+          }));
     if (baseBlocks[cardIdx]) {
       baseBlocks[cardIdx] = { ...baseBlocks[cardIdx], bgImage: uploaded.url };
       updateNestedFields({ blocks: baseBlocks });
       showToast("success", `Card ${cardIdx + 1} background updated.`);
+    }
+  };
+
+  const handleCollectionCardImageUpload = async (
+    cardIdx: number,
+    file: File
+  ) => {
+    const uploaded = await uploadMediaFile(file);
+    if (!uploaded) return;
+    const baseItems = Array.isArray(parsedEditorObj?.items)
+      ? [...(parsedEditorObj?.items as Array<Record<string, unknown>>)]
+      : DEFAULT_COLLECTION_ITEMS.map((item) => ({ ...item }));
+    if (baseItems[cardIdx]) {
+      baseItems[cardIdx] = { ...baseItems[cardIdx], image: uploaded.url };
+      updateNestedFields({ items: baseItems });
+      showToast("success", `Collection card ${cardIdx + 1} image updated.`);
     }
   };
 
@@ -3354,6 +3412,442 @@ export default function AdminDashboardClient({
                               Ukuran teks, padding, dan tinggi pita marquee mengikuti ukuran logo.
                             </p>
                           </div>
+                        </div>
+                      )}
+
+                      {/* COLLECTION SECTION SETTINGS (CARD STYLE + CARDS) */}
+                      {selectedSection.type === "COLLECTION_SECTION" && (
+                        <div className="space-y-3 pt-2 border-t border-[#f0ece3]">
+                          {/* Card Style */}
+                          <div className="space-y-2">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-[#8c6d48]">
+                              Card Style
+                            </p>
+                            <div className="space-y-0.5">
+                              <label className="block text-[10px] text-[#6b6256]">
+                                Round Corner (
+                                {Number(parsedEditorObj.cardRadius ?? 16)}px)
+                              </label>
+                              <input
+                                type="range"
+                                min={0}
+                                max={32}
+                                value={Number(parsedEditorObj.cardRadius ?? 16)}
+                                onChange={(e) =>
+                                  updateNestedFields({
+                                    cardRadius: Number(e.target.value),
+                                  })
+                                }
+                                className="w-full accent-[#8c6d48]"
+                              />
+                            </div>
+
+                            <div className="flex items-center justify-between gap-2">
+                              <label className="inline-flex items-center gap-1.5 text-[11px] font-semibold cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(
+                                    parsedEditorObj.cardBorder ?? true
+                                  )}
+                                  onChange={(e) =>
+                                    updateNestedFields({
+                                      cardBorder: e.target.checked,
+                                    })
+                                  }
+                                  className="accent-[#8c6d48]"
+                                />
+                                Border
+                              </label>
+                              {Boolean(parsedEditorObj.cardBorder ?? true) && (
+                                <input
+                                  type="color"
+                                  value={String(
+                                    parsedEditorObj.cardBorderColor || "#e5dfd3"
+                                  )}
+                                  onChange={(e) =>
+                                    updateNestedFields({
+                                      cardBorderColor: e.target.value,
+                                    })
+                                  }
+                                  className="h-6 w-8 rounded border border-[#dcd4c5] cursor-pointer bg-white p-0.5"
+                                />
+                              )}
+                            </div>
+
+                            <div className="space-y-0.5">
+                              <label className="block text-[10px] text-[#6b6256]">
+                                Shadow
+                              </label>
+                              <select
+                                value={String(
+                                  parsedEditorObj.cardShadow ?? "sm"
+                                )}
+                                onChange={(e) =>
+                                  updateNestedFields({
+                                    cardShadow: e.target.value,
+                                  })
+                                }
+                                className="w-full px-2 py-1 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
+                              >
+                                <option value="none">None</option>
+                                <option value="sm">Small</option>
+                                <option value="md">Medium</option>
+                                <option value="lg">Large</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          {/* Collection Cards List */}
+                          {(() => {
+                            const currentItems = Array.isArray(
+                              parsedEditorObj.items
+                            )
+                              ? (parsedEditorObj.items as Array<
+                                  Record<string, unknown>
+                                >)
+                              : DEFAULT_COLLECTION_ITEMS.map((item) => ({
+                                  ...(item as Record<string, unknown>),
+                                }));
+
+                            const updateItems = (
+                              nextItems: Array<Record<string, unknown>>
+                            ) => {
+                              updateNestedFields({ items: nextItems });
+                            };
+
+                            return (
+                              <div className="space-y-2.5 pt-2 border-t border-[#f0ece3]">
+                                <div className="flex items-center justify-between gap-2">
+                                  <p className="text-[10px] font-bold uppercase tracking-wider text-[#8c6d48]">
+                                    Collection Cards ({currentItems.length})
+                                  </p>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      updateItems([
+                                        ...currentItems,
+                                        {
+                                          id: `col-${Date.now()}`,
+                                          title: "New Collection",
+                                          count: "",
+                                          description:
+                                            "Short collection summary...",
+                                          href: "/products",
+                                          image: "",
+                                        },
+                                      ])
+                                    }
+                                    className="inline-flex items-center gap-1 px-2 py-1 rounded bg-[#1a1714] hover:bg-[#8c6d48] text-white text-[10px] font-bold"
+                                  >
+                                    <Plus className="w-3 h-3" />
+                                    Add Card
+                                  </button>
+                                </div>
+
+                                {currentItems.map((item, cardIdx) => {
+                                  const patchItem = (
+                                    patch: Record<string, unknown>
+                                  ) => {
+                                    updateItems(
+                                      currentItems.map((entry, i) =>
+                                        i === cardIdx
+                                          ? { ...entry, ...patch }
+                                          : entry
+                                      )
+                                    );
+                                  };
+
+                                  const moveItem = (dir: -1 | 1) => {
+                                    const target = cardIdx + dir;
+                                    if (
+                                      target < 0 ||
+                                      target >= currentItems.length
+                                    )
+                                      return;
+                                    const copy = [...currentItems];
+                                    const [moved] = copy.splice(cardIdx, 1);
+                                    copy.splice(target, 0, moved);
+                                    updateItems(copy);
+                                  };
+
+                                  const removeItem = () => {
+                                    updateItems(
+                                      currentItems.filter(
+                                        (_, i) => i !== cardIdx
+                                      )
+                                    );
+                                  };
+
+                                  return (
+                                    <div
+                                      key={String(item.id ?? cardIdx)}
+                                      className="p-2.5 rounded-lg bg-[#faf8f4] border border-[#e5dfd3] space-y-2"
+                                    >
+                                      <div className="flex items-center justify-between gap-1">
+                                        <span className="text-[11px] font-bold text-[#1a1714] truncate">
+                                          {cardIdx + 1}.{" "}
+                                          {String(item.title || "Untitled")}
+                                        </span>
+                                        <div className="flex items-center gap-0.5 shrink-0">
+                                          <button
+                                            type="button"
+                                            disabled={cardIdx === 0}
+                                            onClick={() => moveItem(-1)}
+                                            className="p-1 rounded hover:bg-white disabled:opacity-30"
+                                            title="Move Up"
+                                          >
+                                            <ArrowUp className="w-3 h-3" />
+                                          </button>
+                                          <button
+                                            type="button"
+                                            disabled={
+                                              cardIdx ===
+                                              currentItems.length - 1
+                                            }
+                                            onClick={() => moveItem(1)}
+                                            className="p-1 rounded hover:bg-white disabled:opacity-30"
+                                            title="Move Down"
+                                          >
+                                            <ArrowDown className="w-3 h-3" />
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={removeItem}
+                                            className="p-1 rounded text-[#6b6256] hover:text-red-600 hover:bg-white"
+                                            title="Delete Card"
+                                          >
+                                            <Trash2 className="w-3 h-3" />
+                                          </button>
+                                        </div>
+                                      </div>
+
+                                      {/* Quick Fill from Category / Collection */}
+                                      {(categories.length > 0 ||
+                                        collections.length > 0) && (
+                                        <select
+                                          value=""
+                                          onChange={(e) => {
+                                            const val = e.target.value;
+                                            if (!val) return;
+                                            const [kind, rawId] = val.split(":");
+                                            if (kind === "cat") {
+                                              const cat = categories.find(
+                                                (c) => String(c.id) === rawId
+                                              );
+                                              if (cat) {
+                                                patchItem({
+                                                  title: cat.name,
+                                                  count: String(
+                                                    cat._count?.products ?? ""
+                                                  ),
+                                                  href: `/products?category=${encodeURIComponent(
+                                                    cat.name.toLowerCase()
+                                                  )}`,
+                                                });
+                                              }
+                                            } else if (kind === "col") {
+                                              const col = collections.find(
+                                                (c) => String(c.id) === rawId
+                                              );
+                                              if (col) {
+                                                patchItem({
+                                                  title: col.title,
+                                                  count: String(
+                                                    col.productsCount
+                                                  ),
+                                                  href: `/products?collection=${encodeURIComponent(
+                                                    col.title.toLowerCase()
+                                                  )}`,
+                                                });
+                                              }
+                                            }
+                                          }}
+                                          className="w-full px-2 py-1 text-[11px] bg-white border border-[#dcd4c5] rounded"
+                                        >
+                                          <option value="">
+                                            -- Quick fill from Category /
+                                            Collection --
+                                          </option>
+                                          {categories.map((cat) => (
+                                            <option
+                                              key={`cat-${cat.id}`}
+                                              value={`cat:${cat.id}`}
+                                            >
+                                              Category: {cat.name}
+                                            </option>
+                                          ))}
+                                          {collections.map((col) => (
+                                            <option
+                                              key={`col-${col.id}`}
+                                              value={`col:${col.id}`}
+                                            >
+                                              Collection: {col.title}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      )}
+
+                                      <div className="grid grid-cols-3 gap-1.5">
+                                        <div className="col-span-2 space-y-0.5">
+                                          <label className="block text-[9px] font-semibold uppercase text-[#6b6256]">
+                                            Title
+                                          </label>
+                                          <input
+                                            type="text"
+                                            value={String(item.title ?? "")}
+                                            onChange={(e) =>
+                                              patchItem({
+                                                title: e.target.value,
+                                              })
+                                            }
+                                            className="w-full px-2 py-1 text-[11px] bg-white border border-[#dcd4c5] rounded"
+                                          />
+                                        </div>
+                                        <div className="space-y-0.5">
+                                          <label className="block text-[9px] font-semibold uppercase text-[#6b6256]">
+                                            Count
+                                          </label>
+                                          <input
+                                            type="text"
+                                            value={String(item.count ?? "")}
+                                            onChange={(e) =>
+                                              patchItem({
+                                                count: e.target.value,
+                                              })
+                                            }
+                                            placeholder="140"
+                                            className="w-full px-2 py-1 text-[11px] bg-white border border-[#dcd4c5] rounded"
+                                          />
+                                        </div>
+                                      </div>
+
+                                      <div className="space-y-0.5">
+                                        <label className="block text-[9px] font-semibold uppercase text-[#6b6256]">
+                                          Description
+                                        </label>
+                                        <input
+                                          type="text"
+                                          value={String(item.description ?? "")}
+                                          onChange={(e) =>
+                                            patchItem({
+                                              description: e.target.value,
+                                            })
+                                          }
+                                          className="w-full px-2 py-1 text-[11px] bg-white border border-[#dcd4c5] rounded"
+                                        />
+                                      </div>
+
+                                      <div className="space-y-0.5">
+                                        <label className="block text-[9px] font-semibold uppercase text-[#6b6256]">
+                                          Link URL
+                                        </label>
+                                        <input
+                                          type="text"
+                                          value={String(item.href ?? "")}
+                                          onChange={(e) =>
+                                            patchItem({ href: e.target.value })
+                                          }
+                                          placeholder="/products?category=cigars"
+                                          className="w-full px-2 py-1 text-[11px] font-mono bg-white border border-[#dcd4c5] rounded"
+                                        />
+                                      </div>
+
+                                      {/* Card Image */}
+                                      <div className="space-y-1.5 pt-1 border-t border-[#ece8df]">
+                                        <div className="flex items-center justify-between gap-2">
+                                          <span className="text-[10px] font-semibold text-[#4a4238]">
+                                            Card Image
+                                          </span>
+                                          <div className="flex items-center gap-1">
+                                            {Boolean(item.image) && (
+                                              <button
+                                                type="button"
+                                                onClick={() =>
+                                                  patchItem({ image: "" })
+                                                }
+                                                className="px-1.5 py-0.5 rounded bg-red-50 text-red-700 text-[10px] font-bold"
+                                              >
+                                                Clear
+                                              </button>
+                                            )}
+                                            <label className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#1a1714] hover:bg-[#8c6d48] text-white text-[10px] font-bold cursor-pointer">
+                                              <Upload className="w-2.5 h-2.5" />
+                                              Upload
+                                              <input
+                                                type="file"
+                                                accept="image/*"
+                                                disabled={uploadingImage}
+                                                onChange={(e) => {
+                                                  const file =
+                                                    e.target.files?.[0];
+                                                  if (file)
+                                                    handleCollectionCardImageUpload(
+                                                      cardIdx,
+                                                      file
+                                                    );
+                                                  e.target.value = "";
+                                                }}
+                                                className="hidden"
+                                              />
+                                            </label>
+                                          </div>
+                                        </div>
+
+                                        {Boolean(item.image) && (
+                                          <div className="h-20 w-full rounded border border-[#dcd4c5] bg-white overflow-hidden">
+                                            <img
+                                              src={String(item.image)}
+                                              alt={String(
+                                                item.title || "Preview"
+                                              )}
+                                              className="w-full h-full object-cover"
+                                            />
+                                          </div>
+                                        )}
+
+                                        {mediaList.length > 0 && (
+                                          <select
+                                            value={
+                                              mediaList.some(
+                                                (m) => m.url === item.image
+                                              )
+                                                ? String(item.image)
+                                                : ""
+                                            }
+                                            onChange={(e) =>
+                                              patchItem({
+                                                image: e.target.value,
+                                              })
+                                            }
+                                            className="w-full px-2 py-1 text-[11px] bg-white border border-[#dcd4c5] rounded"
+                                          >
+                                            <option value="">
+                                              -- Pick image from Files --
+                                            </option>
+                                            {mediaList.map((m) => (
+                                              <option key={m.id} value={m.url}>
+                                                {m.fileName}
+                                              </option>
+                                            ))}
+                                          </select>
+                                        )}
+
+                                        <input
+                                          type="text"
+                                          value={String(item.image ?? "")}
+                                          onChange={(e) =>
+                                            patchItem({ image: e.target.value })
+                                          }
+                                          placeholder="Or paste card image URL..."
+                                          className="w-full px-2 py-1 text-[11px] bg-white border border-[#dcd4c5] rounded"
+                                        />
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })()}
                         </div>
                       )}
 

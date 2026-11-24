@@ -330,24 +330,62 @@ function CollectionSection({
       ? c.textColor.trim()
       : undefined;
 
-  const items: CollectionCardItem[] =
-    Array.isArray(c.items) && c.items.length > 0
-      ? (c.items as CollectionCardItem[])
-      : DEFAULT_COLLECTION_ITEMS;
+  const showDivider = Boolean(c.showDivider);
+  const dividerWidth = Math.min(100, Math.max(10, Number(c.dividerWidth ?? 100)));
+  const dividerThickness = Math.min(
+    10,
+    Math.max(1, Number(c.dividerThickness ?? 1))
+  );
+
+  const cardRadius = Math.min(32, Math.max(0, Number(c.cardRadius ?? 16)));
+  const cardBorder = c.cardBorder !== undefined ? Boolean(c.cardBorder) : true;
+  const cardBorderColor =
+    typeof c.cardBorderColor === "string" && c.cardBorderColor.trim()
+      ? c.cardBorderColor.trim()
+      : "#e5dfd3";
+  const cardShadow = String(c.cardShadow ?? "sm");
+  const shadowClass =
+    cardShadow === "none"
+      ? "shadow-none"
+      : cardShadow === "lg"
+      ? "shadow-lg"
+      : cardShadow === "md"
+      ? "shadow-md"
+      : "shadow-xs";
+
+  const items: CollectionCardItem[] = Array.isArray(c.items)
+    ? (c.items as CollectionCardItem[])
+    : DEFAULT_COLLECTION_ITEMS;
 
   return (
     <section className="w-full bg-transparent py-14 md:py-20 px-6 md:px-10">
-      <div className="max-w-7xl mx-auto space-y-8">
-        {heading && (
-          <h2
-            style={{
-              fontSize: `${headingSize}px`,
-              ...(textColor ? { color: textColor } : {}),
-            }}
-            className={`font-serif leading-tight text-center ${headingStyleClass}`}
-          >
-            {heading}
-          </h2>
+      <div className="max-w-7xl mx-auto flex flex-col gap-8">
+        {(heading || showDivider) && (
+          <div className="flex flex-col items-center text-center gap-4">
+            {heading && (
+              <h2
+                style={{
+                  fontSize: `${headingSize}px`,
+                  ...(textColor ? { color: textColor } : {}),
+                }}
+                className={`font-serif leading-tight text-center ${headingStyleClass}`}
+              >
+                {heading}
+              </h2>
+            )}
+            {showDivider && (
+              <div className="w-full flex justify-center">
+                <div
+                  style={{
+                    width: `${dividerWidth}%`,
+                    height: `${dividerThickness}px`,
+                    ...(textColor ? { backgroundColor: textColor } : {}),
+                  }}
+                  className={textColor ? "opacity-50" : "bg-current opacity-30"}
+                />
+              </div>
+            )}
+          </div>
         )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
@@ -355,7 +393,13 @@ function CollectionSection({
             <Link
               key={item.id}
               href={item.href || "/products"}
-              className="group bg-white border border-[#e5dfd3] rounded-2xl overflow-hidden flex flex-col justify-between shadow-xs hover:shadow-md transition-all text-[#1a1714]"
+              style={{
+                borderRadius: `${cardRadius}px`,
+                ...(cardBorder
+                  ? { borderWidth: "1px", borderColor: cardBorderColor }
+                  : { borderWidth: "0px" }),
+              }}
+              className={`group bg-white overflow-hidden flex flex-col justify-between ${shadowClass} hover:shadow-md transition-all text-[#1a1714]`}
             >
               <div className="relative h-56 w-full bg-linear-to-b from-[#edeae4] via-[#e3dfd6] to-[#9b968d] overflow-hidden">
                 {item.image ? (
@@ -835,7 +879,8 @@ export function HomeStorefront({
             return wrapSection(
               renderSectionShell(
                 section.content,
-                <CollectionSection content={section.content} />
+                <CollectionSection content={section.content} />,
+                { suppressTopDivider: true }
               )
             );
 
