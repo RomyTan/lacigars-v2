@@ -3,6 +3,11 @@ import { cookies } from "next/headers";
 
 export const ADMIN_COOKIE_NAME = "lac_admin_session";
 
+interface AdminAccount {
+  email: string;
+  password: string;
+}
+
 function getSessionSecret(): string {
   const secret = process.env.ADMIN_SESSION_SECRET || process.env.DATABASE_URL;
   if (!secret) {
@@ -11,35 +16,47 @@ function getSessionSecret(): string {
   return secret;
 }
 
-export function getConfiguredAdminCredentials(): {
-  email: string;
-  password: string;
-} {
-  return {
-    email: (process.env.ADMIN_EMAIL || "").trim().toLowerCase(),
-    password: process.env.ADMIN_PASSWORD || "",
-  };
+export function getConfiguredAdminAccounts(): AdminAccount[] {
+  const candidates: Array<{ email?: string; password?: string }> = [
+    { email: process.env.ADMIN_EMAIL, password: process.env.ADMIN_PASSWORD },
+    { email: process.env.ADMIN_EMAIL_2, password: process.env.ADMIN_PASSWORD_2 },
+    { email: process.env.ADMIN_EMAIL_3, password: process.env.ADMIN_PASSWORD_3 },
+  ];
+
+  return candidates
+    .map((c) => ({
+      email: (c.email || "").trim().toLowerCase(),
+      password: c.password || "",
+    }))
+    .filter((c) => Boolean(c.email && c.password));
+}
+
+export function getConfiguredAdminCredentials(): AdminAccount {
+  const accounts = getConfiguredAdminAccounts();
+  return accounts[0] ?? { email: "", password: "" };
 }
 
 export function verifyAdminPassword(
   inputEmail: string,
   inputPassword: string
 ): boolean {
-  const configured = getConfiguredAdminCredentials();
-  if (!configured.email || !configured.password) {
+  const accounts = getConfiguredAdminAccounts();
+  if (accounts.length === 0) {
     return false;
   }
 
   const normalizedEmail = inputEmail.trim().toLowerCase();
-  const emailMatch = normalizedEmail === configured.email;
-
   const inputBuf = Buffer.from(inputPassword, "utf8");
-  const expectedBuf = Buffer.from(configured.password, "utf8");
-  const passwordMatch =
-    inputBuf.length === expectedBuf.length &&
-    crypto.timingSafeEqual(inputBuf, expectedBuf);
 
-  return emailMatch && passwordMatch;
+  return accounts.some((account) => {
+    const emailMatch = normalizedEmail === account.email;
+    const expectedBuf = Buffer.from(account.password, "utf8");
+    const passwordMatch =
+      inputBuf.length === expectedBuf.length &&
+      crypto.timingSafeEqual(inputBuf, expectedBuf);
+
+    return emailMatch && passwordMatch;
+  });
 }
 
 function signPayload(payloadBase64: string): string {
