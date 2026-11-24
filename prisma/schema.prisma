@@ -241,6 +241,13 @@ model Customer {
   oldestPastDueDays Int     @default(0)
   termsName         String?
 
+  // Client-requested compliance & automated expiration alert fields
+  resaleTaxNumber              String?
+  resaleTaxExpirationDate      DateTime? @db.Date
+  tobaccoLicense               String?
+  tobaccoLicenseExpirationDate DateTime? @db.Date
+  licenseAlertLastSentAt       DateTime?
+
   // Cached customer-level purchase activity from QuickBooks/history.
   // null means no completed purchase has been found.
   lastPurchaseDate DateTime? @db.Date

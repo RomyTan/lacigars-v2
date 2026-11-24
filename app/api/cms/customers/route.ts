@@ -8,11 +8,49 @@ interface DbCustomerRow {
   companyName: string | null;
   primaryEmail: string | null;
   phone: string | null;
+  resaleTaxNumber: string | null;
+  resaleTaxExpirationDate: Date | null;
+  tobaccoLicense: string | null;
+  tobaccoLicenseExpirationDate: Date | null;
+  licenseAlertLastSentAt: Date | null;
   isActive: boolean;
   portalEnabled: boolean;
   pricingType: string;
   termsName: string | null;
   createdAt: Date;
+}
+
+const CUSTOMER_SELECT = {
+  id: true,
+  customerNumber: true,
+  displayName: true,
+  companyName: true,
+  primaryEmail: true,
+  phone: true,
+  resaleTaxNumber: true,
+  resaleTaxExpirationDate: true,
+  tobaccoLicense: true,
+  tobaccoLicenseExpirationDate: true,
+  licenseAlertLastSentAt: true,
+  isActive: true,
+  portalEnabled: true,
+  pricingType: true,
+  termsName: true,
+  createdAt: true,
+} as const;
+
+function parseDateInput(val: unknown): Date | null {
+  if (!val) return null;
+  const str = String(val).trim();
+  if (!str) return null;
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(str) ? `${str}T00:00:00.000Z` : str;
+  const parsed = new Date(iso);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function formatDateOnly(d: Date | null): string | null {
+  if (!d) return null;
+  return d.toISOString().slice(0, 10);
 }
 
 function mapCustomerToAdmin(c: DbCustomerRow) {
@@ -29,6 +67,13 @@ function mapCustomerToAdmin(c: DbCustomerRow) {
     email: c.primaryEmail ?? "",
     phone: c.phone,
     licenseNumber: c.customerNumber,
+    resaleTaxNumber: c.resaleTaxNumber,
+    resaleTaxExpirationDate: formatDateOnly(c.resaleTaxExpirationDate),
+    tobaccoLicense: c.tobaccoLicense,
+    tobaccoLicenseExpirationDate: formatDateOnly(c.tobaccoLicenseExpirationDate),
+    licenseAlertLastSentAt: c.licenseAlertLastSentAt
+      ? c.licenseAlertLastSentAt.toISOString()
+      : null,
     status,
     priceTier: String(c.pricingType),
     inviteToken: String(c.id),
@@ -41,19 +86,7 @@ export async function GET() {
   try {
     const rows = await prisma.customer.findMany({
       orderBy: [{ createdAt: "desc" }],
-      select: {
-        id: true,
-        customerNumber: true,
-        displayName: true,
-        companyName: true,
-        primaryEmail: true,
-        phone: true,
-        isActive: true,
-        portalEnabled: true,
-        pricingType: true,
-        termsName: true,
-        createdAt: true,
-      },
+      select: CUSTOMER_SELECT,
     });
 
     return NextResponse.json({
@@ -104,23 +137,21 @@ export async function POST(req: Request) {
         customerNumber: body.licenseNumber
           ? String(body.licenseNumber).trim()
           : null,
+        resaleTaxNumber: body.resaleTaxNumber
+          ? String(body.resaleTaxNumber).trim()
+          : null,
+        resaleTaxExpirationDate: parseDateInput(body.resaleTaxExpirationDate),
+        tobaccoLicense: body.tobaccoLicense
+          ? String(body.tobaccoLicense).trim()
+          : null,
+        tobaccoLicenseExpirationDate: parseDateInput(
+          body.tobaccoLicenseExpirationDate
+        ),
         termsName: body.notes ? String(body.notes).trim() : null,
         isActive: status !== "REJECTED" && status !== "SUSPENDED",
         portalEnabled: status === "APPROVED",
       },
-      select: {
-        id: true,
-        customerNumber: true,
-        displayName: true,
-        companyName: true,
-        primaryEmail: true,
-        phone: true,
-        isActive: true,
-        portalEnabled: true,
-        pricingType: true,
-        termsName: true,
-        createdAt: true,
-      },
+      select: CUSTOMER_SELECT,
     });
 
     return NextResponse.json(
@@ -130,7 +161,7 @@ export async function POST(req: Request) {
   } catch (err) {
     console.error("POST /api/cms/customers error:", err);
     return NextResponse.json(
-      { error: "Failed to invite customer." },
+      { error: "Failed to create customer." },
       { status: 500 }
     );
   }
@@ -142,21 +173,12 @@ export async function PATCH(req: Request) {
     const id = Number(body.id);
     if (!id) {
       return NextResponse.json(
-        { error: "Customer ID required." },
+        { error: "Customer ID is required." },
         { status: 400 }
       );
     }
 
-    const data: {
-      companyName?: string;
-      displayName?: string;
-      primaryEmail?: string;
-      phone?: string | null;
-      customerNumber?: string | null;
-      termsName?: string | null;
-      isActive?: boolean;
-      portalEnabled?: boolean;
-    } = {};
+    const data: Record<string, unknown> = {};
 
     if (body.companyName !== undefined) {
       data.companyName = String(body.companyName).trim();
@@ -174,6 +196,26 @@ export async function PATCH(req: Request) {
       data.customerNumber = body.licenseNumber
         ? String(body.licenseNumber).trim()
         : null;
+    }
+    if (body.resaleTaxNumber !== undefined) {
+      data.resaleTaxNumber = body.resaleTaxNumber
+        ? String(body.resaleTaxNumber).trim()
+        : null;
+    }
+    if (body.resaleTaxExpirationDate !== undefined) {
+      data.resaleTaxExpirationDate = parseDateInput(
+        body.resaleTaxExpirationDate
+      );
+    }
+    if (body.tobaccoLicense !== undefined) {
+      data.tobaccoLicense = body.tobaccoLicense
+        ? String(body.tobaccoLicense).trim()
+        : null;
+    }
+    if (body.tobaccoLicenseExpirationDate !== undefined) {
+      data.tobaccoLicenseExpirationDate = parseDateInput(
+        body.tobaccoLicenseExpirationDate
+      );
     }
     if (body.notes !== undefined) {
       data.termsName = body.notes ? String(body.notes).trim() : null;
@@ -195,19 +237,7 @@ export async function PATCH(req: Request) {
     const updated = await prisma.customer.update({
       where: { id },
       data,
-      select: {
-        id: true,
-        customerNumber: true,
-        displayName: true,
-        companyName: true,
-        primaryEmail: true,
-        phone: true,
-        isActive: true,
-        portalEnabled: true,
-        pricingType: true,
-        termsName: true,
-        createdAt: true,
-      },
+      select: CUSTOMER_SELECT,
     });
 
     return NextResponse.json({ customer: mapCustomerToAdmin(updated) });
@@ -226,7 +256,7 @@ export async function DELETE(req: Request) {
     const id = Number(searchParams.get("id"));
     if (!id) {
       return NextResponse.json(
-        { error: "Customer ID required." },
+        { error: "Customer ID is required." },
         { status: 400 }
       );
     }
@@ -239,7 +269,7 @@ export async function DELETE(req: Request) {
       return NextResponse.json(
         {
           error:
-            "Customer ini sudah memiliki riwayat order/invoice. Gunakan Reject untuk menonaktifkan.",
+            "This customer already has order/invoice history. Use Reject/Suspend to deactivate instead.",
         },
         { status: 409 }
       );

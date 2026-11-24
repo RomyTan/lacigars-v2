@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cms/customers/alerts?days=30",
+      "schedule": "0 13 * * *"
+    }
+  ]
+}

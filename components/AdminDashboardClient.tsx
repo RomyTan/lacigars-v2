@@ -1,17 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
 import { INITIAL_HERO_CONFIG } from "@/lib/storefront-data";
 import {
+  LayoutDashboard,
   Users,
-  UserPlus,
   FileSpreadsheet,
   Download,
-  Check,
-  Ban,
   Tag,
   FolderTree,
   Package,
@@ -40,7 +38,17 @@ import {
   Copy,
 } from "lucide-react";
 
+import {
+  AdminB2BDashboard,
+  getDaysUntil,
+} from "@/components/admin/AdminB2BDashboard";
+import {
+  CustomerListView,
+  type CustomerRecord,
+} from "@/components/admin/CustomerListView";
+
 type AdminTab =
+  | "dashboard"
   | "sections"
   | "orders"
   | "customers"
@@ -95,20 +103,6 @@ interface OrderItem {
   total: number;
   status: string;
   date: string;
-}
-
-interface CustomerRecord {
-  id: number;
-  companyName: string;
-  contactName: string;
-  email: string;
-  phone: string | null;
-  licenseNumber: string | null;
-  status: string;
-  priceTier: string;
-  inviteToken: string | null;
-  notes: string | null;
-  createdAt: string;
 }
 
 interface ExcelImportRow {
@@ -300,8 +294,18 @@ export default function AdminDashboardClient({
 }) {
   const router = useRouter();
   const previewIframeRef = useRef<HTMLIFrameElement | null>(null);
+  const navContainerRef = useRef<HTMLDivElement | null>(null);
+  const prevNavKeyRef = useRef<string | null>(null);
+  const prevNavTopRef = useRef<number>(0);
+  const [navBlob, setNavBlob] = useState({
+    top: 0,
+    bottom: 0,
+    visible: false,
+    transition: "none",
+  });
 
-  const [activeTab, setActiveTab] = useState<AdminTab>("sections");
+  const [activeTab, setActiveTab] = useState<AdminTab>("dashboard");
+  const [sendingAlerts, setSendingAlerts] = useState(false);
   const [editorFocus, setEditorFocus] = useState<EditorFocus>("homepage");
   const [themeSectionsOpen, setThemeSectionsOpen] = useState(true);
   const [previewViewport, setPreviewViewport] =
@@ -1478,8 +1482,8 @@ export default function AdminDashboardClient({
       setImportFileName("");
       showToast(
         "success",
-        `Import selesai: ${data.created} baru, ${data.updated} diupdate${
-          data.skipped ? `, ${data.skipped} dilewati` : ""
+        `Import complete: ${data.created} created, ${data.updated} updated${
+          data.skipped ? `, ${data.skipped} skipped` : ""
         }.`
       );
     } catch {
@@ -1488,6 +1492,34 @@ export default function AdminDashboardClient({
       setImportingExcel(false);
     }
   };
+
+  const handleTriggerAlertEmail = async () => {
+    setSendingAlerts(true);
+    try {
+      const res = await fetch("/api/cms/customers/alerts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ withinDays: 30 }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showToast("error", data.error || "Failed to check license alerts.");
+        return;
+      }
+      showToast("success", data.message || "License alert check complete.");
+    } catch {
+      showToast("error", "Failed to send expiration alerts.");
+    } finally {
+      setSendingAlerts(false);
+    }
+  };
+
+  const expiringLicensesCount = customers.filter((c) => {
+    if (c.status === "REJECTED") return false;
+    const t = getDaysUntil(c.resaleTaxExpirationDate);
+    const l = getDaysUntil(c.tobaccoLicenseExpirationDate);
+    return (t !== null && t <= 30) || (l !== null && l <= 30);
+  }).length;
 
   const filteredProducts = products.filter((p) => {
     const q = productSearch.trim().toLowerCase();
@@ -1532,9 +1564,131 @@ export default function AdminDashboardClient({
   const isCollectionSection =
     selectedSection?.type === "EDITORIAL_CATEGORIES" ||
     selectedSection?.type === "COLLECTION_SECTION";
+  const activeNavKey =
+    activeTab === "sections"
+      ? editorFocus === "header"
+        ? "header"
+        : editorFocus === "footer"
+        ? "footer"
+        : selectedSectionId !== null
+        ? `section-${selectedSectionId}`
+        : "header"
+      : activeTab;
 
+  useLayoutEffect(() => {
+    const container = navContainerRef.current;
+    if (!container) return;
+
+    const measure = (animate: boolean) => {
+      const target = container.querySelector<HTMLElement>(
+        `[data-nav-key="${activeNavKey}"]`
+      );
+      if (!target) {
+        setNavBlob((prev) => (prev.visible ? { ...prev, visible: false } : prev));
+        return;
+      }
+
+      const cRect = container.getBoundingClientRect();
+      const tRect = target.getBoundingClientRect();
+      const nextTop = Math.round(tRect.top - cRect.top);
+      const nextBottom = Math.round(cRect.bottom - tRect.bottom);
+
+      const isMovingDown = nextTop > prevNavTopRef.current;
+      const shouldAnimate =
+        animate &&
+        prevNavKeyRef.current !== null &&
+        prevNavKeyRef.current !== activeNavKey;
+
+      const transition = shouldAnimate
+        ? isMovingDown
+          ? "bottom 210ms cubic-bezier(0.22, 1, 0.36, 1), top 440ms cubic-bezier(0.32, 1.08, 0.48, 1), opacity 160ms ease"
+          : "top 210ms cubic-bezier(0.22, 1, 0.36, 1), bottom 440ms cubic-bezier(0.32, 1.08, 0.48, 1), opacity 160ms ease"
+        : "none";
+
+      prevNavKeyRef.current = activeNavKey;
+      prevNavTopRef.current = nextTop;
+
+      setNavBlob({
+        top: nextTop,
+        bottom: nextBottom,
+        visible: true,
+        transition,
+      });
+    };
+
+    measure(true);
+
+    const ro = new ResizeObserver(() => measure(false));
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, [activeNavKey, themeSectionsOpen, displaySections.length, loading]);
   return (
-    <div className="relative z-100 h-screen overflow-hidden bg-[#f4f3f0] text-[#1a1714] flex flex-col">
+    <div className="relative z-100 h-screen overflow-hidden bg-[#1a1714] text-[#1a1714] flex flex-col">
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+            @keyframes lacPanelReveal {
+              0% {
+                opacity: 0;
+                filter: blur(5px);
+                transform: translateY(6px);
+              }
+              100% {
+                opacity: 1;
+                filter: blur(0px);
+                transform: translateY(0px);
+              }
+            }
+            .lac-panel-reveal {
+              animation: lacPanelReveal 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+            }
+            .lac-sidebar-scroll {
+              scrollbar-width: none;
+              -ms-overflow-style: none;
+            }
+            .lac-sidebar-scroll::-webkit-scrollbar {
+              display: none;
+            }
+            .lac-blob-indicator {
+              display: none;
+            }
+            @media (min-width: 768px) {
+              .lac-blob-indicator {
+                display: block;
+                position: absolute;
+                left: 12px;
+                right: -1px;
+                margin: 0 !important;
+                background: #f6f4ef;
+                border-radius: 12px 0 0 12px;
+                pointer-events: none;
+                z-index: 0;
+                will-change: top, bottom;
+              }
+              .lac-blob-indicator::before {
+                content: "";
+                position: absolute;
+                right: 1px;
+                top: -12px;
+                width: 12px;
+                height: 12px;
+                pointer-events: none;
+                background: radial-gradient(circle at 0 0, transparent 11.5px, #f6f4ef 12px);
+              }
+              .lac-blob-indicator::after {
+                content: "";
+                position: absolute;
+                right: 1px;
+                bottom: -12px;
+                width: 12px;
+                height: 12px;
+                pointer-events: none;
+                background: radial-gradient(circle at 0 100%, transparent 11.5px, #f6f4ef 12px);
+              }
+            }
+          `,
+        }}
+      />
       <header className="h-14 bg-[#1a1714] text-[#fdfbf7] px-5 flex items-center justify-between border-b border-white/10 sticky top-0 z-20 shrink-0">
         <div className="flex items-center gap-3">
           <img
@@ -1601,264 +1755,296 @@ export default function AdminDashboardClient({
 
       <div className="flex-1 min-h-0 flex flex-col md:flex-row overflow-hidden">
         {/* Left Navigation Sidebar */}
-        <aside className="w-full md:w-68 bg-[#dedbd4] border-b md:border-b-0 md:border-r border-[#c8c3b8] p-4 pb-10 space-y-2.5 shrink-0 md:h-full md:overflow-y-auto">
-          <div>
-            <div className="w-full flex items-center justify-between px-1 py-1 text-[11px] font-extrabold uppercase tracking-[0.06em] text-[#231f1c]">
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveTab("sections");
-                  setThemeSectionsOpen(true);
-                }}
-                className="flex-1 text-left"
-              >
-                THEME EDITOR
-              </button>
-              <button
-                type="button"
-                onClick={() => setThemeSectionsOpen((prev) => !prev)}
-                className="p-0.5 rounded hover:bg-[#d3cfc6] text-[#3d2110]"
-                title={themeSectionsOpen ? "Collapse editor" : "Expand editor"}
-              >
-                {themeSectionsOpen ? (
-                  <ChevronDown className="w-3.5 h-3.5" />
-                ) : (
-                  <ChevronRight className="w-3.5 h-3.5" />
-                )}
-              </button>
-            </div>
+        {/* Left Connected Dark Sidebar */}
+        {/* Left Connected Dark Sidebar */}
+        <aside className="lac-sidebar-scroll w-full md:w-64 bg-[#1a1714] text-[#d8d0c5] shrink-0 md:h-full md:overflow-y-auto select-none">
+          <div
+            ref={navContainerRef}
+            className="relative px-3 md:pl-3 md:pr-0 pt-7 pb-10"
+          >
+            {/* Single Persistent Liquid-Blob Indicator */}
+            <div
+              aria-hidden="true"
+              className="lac-blob-indicator"
+              style={{
+                top: `${navBlob.top}px`,
+                bottom: `${navBlob.bottom}px`,
+                opacity: navBlob.visible ? 1 : 0,
+                transition: navBlob.transition,
+              }}
+            />
 
-            {themeSectionsOpen && (
-              <div className="pt-2 space-y-2">
-                {/* 1. Header */}
+            <div className="relative z-10 flex flex-col gap-2">
+            {/* 0. DASHBOARD (Top Item) */}
+            <button
+              type="button"
+              data-nav-key="dashboard"
+              onClick={() => setActiveTab("dashboard")}
+              className={`relative z-10 w-full md:w-[calc(100%-16px)] flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition-colors duration-200 ${
+                activeNavKey === "dashboard"
+                  ? "bg-[#f6f4ef] md:bg-transparent text-[#1a1714]"
+                  : "text-[#d8d0c5] hover:bg-white/8 hover:text-white"
+              }`}
+            >
+              <span className="flex items-center gap-2.5">
+                <LayoutDashboard className="w-4 h-4 shrink-0" />
+                Dashboard
+              </span>
+              {expiringLicensesCount > 0 && (
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-500 text-white">
+                  {expiringLicensesCount}
+                </span>
+              )}
+            </button>
+
+            <hr className="border-white/10 my-2.5 md:mr-4" />
+
+            {/* THEME EDITOR */}
+            <div>
+              <div className="w-full md:w-[calc(100%-16px)] flex items-center justify-between px-2 py-1 text-[10px] font-extrabold uppercase tracking-[0.12em] text-[#a3998b]">
                 <button
                   type="button"
                   onClick={() => {
                     setActiveTab("sections");
-                    setEditorFocus("header");
+                    setThemeSectionsOpen(true);
                   }}
-                  className={`w-full flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-lg text-xs font-semibold transition-colors border ${
-                    activeTab === "sections" && editorFocus === "header"
-                      ? "bg-[#241307] text-[#fdfbf7] border-[#241307]"
-                      : "bg-[#e3e0d9] text-[#231f1c] border-[#c8c3b8] hover:bg-[#d8d4cb]"
-                  }`}
+                  className="flex-1 text-left hover:text-white transition-colors"
                 >
-                  <span className="truncate">1. Header</span>
+                  THEME EDITOR
                 </button>
-
-                {/* 2..N Theme Sections */}
-                {displaySections.map((sec, idx) => {
-                  const isCurrent =
-                    activeTab === "sections" &&
-                    editorFocus === "homepage" &&
-                    sec.id === selectedSectionId;
-                  return (
-                    <div
-                      key={sec.id}
-                      onClick={() => selectSection(sec, idx)}
-                      className={`group flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-lg text-xs cursor-pointer transition-colors border ${
-                        isCurrent
-                          ? "bg-[#241307] text-[#fdfbf7] border-[#241307] font-semibold"
-                          : "bg-[#e3e0d9] text-[#231f1c] border-[#c8c3b8] hover:bg-[#d8d4cb]"
-                      }`}
-                    >
-                      <span
-                        className={`truncate ${
-                          sec.isActive ? "" : "line-through opacity-55"
-                        }`}
-                      >
-                        {idx + 2}. {formatSectionLabel(sec)}
-                      </span>
-                      <span
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded shrink-0 ${
-                          sec.isActive
-                            ? isCurrent
-                              ? "bg-[#4f8a2b] text-white"
-                              : "bg-[#3d2110] text-white"
-                            : "bg-[#b8b2a6] text-[#2c251f]"
-                        }`}
-                      >
-                        {sec.isActive ? "ON" : "OFF"}
-                      </span>
-                    </div>
-                  );
-                })}
-
-                {/* Last. Footer */}
                 <button
                   type="button"
-                  onClick={() => {
-                    setActiveTab("sections");
-                    setEditorFocus("footer");
-                  }}
-                  className={`w-full flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-lg text-xs font-semibold transition-colors border ${
-                    activeTab === "sections" && editorFocus === "footer"
-                      ? "bg-[#241307] text-[#fdfbf7] border-[#241307]"
-                      : "bg-[#e3e0d9] text-[#231f1c] border-[#c8c3b8] hover:bg-[#d8d4cb]"
-                  }`}
+                  onClick={() => setThemeSectionsOpen((prev) => !prev)}
+                  className="p-0.5 rounded hover:bg-white/10 text-[#d8d0c5]"
+                  title={themeSectionsOpen ? "Collapse editor" : "Expand editor"}
                 >
-                  <span className="truncate">
-                    {displaySections.length + 2}. Footer
-                  </span>
+                  {themeSectionsOpen ? (
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  ) : (
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  )}
                 </button>
               </div>
-            )}
-          </div>
 
-          {/* Divider akhir Theme Editor (di bawah Footer) */}
-          <hr className="border-[#b9b3a6] my-3" />
+              {themeSectionsOpen && (
+                <div className="pt-1.5 space-y-1">
+                  {/* 1. Header */}
+                  <button
+                    type="button"
+                    data-nav-key="header"
+                    onClick={() => {
+                      setActiveTab("sections");
+                      setEditorFocus("header");
+                    }}
+                    className={`relative z-10 w-full md:w-[calc(100%-16px)] flex items-center justify-between gap-2 px-3.5 py-2 rounded-xl text-xs transition-colors duration-200 ${
+                      activeNavKey === "header"
+                        ? "bg-[#f6f4ef] md:bg-transparent text-[#1a1714] font-bold"
+                        : "text-[#d8d0c5] font-semibold hover:bg-white/8 hover:text-white"
+                    }`}
+                  >
+                    <span className="truncate">1. Header</span>
+                  </button>
 
-          <div className="space-y-2">
-            <button
-              type="button"
-              onClick={() => setActiveTab("orders")}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg text-xs font-semibold transition-colors border ${
-                activeTab === "orders"
-                  ? "bg-[#241307] text-[#fdfbf7] border-[#241307]"
-                  : "bg-[#e3e0d9] text-[#231f1c] border-[#c8c3b8] hover:bg-[#d8d4cb]"
-              }`}
-            >
-              <span className="flex items-center gap-2">
-                <ClipboardList className="w-3.5 h-3.5 opacity-80" />
-                Orders
-              </span>
-              <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-white text-[#1a1714] border border-[#c8c3b8]">
-                {String(orders.length).padStart(2, "0")}
-              </span>
-            </button>
+                  {/* 2..N Theme Sections */}
+                  {displaySections.map((sec, idx) => {
+                    const key = `section-${sec.id}`;
+                    const isCurrent = activeNavKey === key;
+                    return (
+                      <div
+                        key={sec.id}
+                        data-nav-key={key}
+                        onClick={() => selectSection(sec, idx)}
+                        className={`relative z-10 w-full md:w-[calc(100%-16px)] group flex items-center justify-between gap-2 px-3.5 py-2 rounded-xl text-xs cursor-pointer transition-colors duration-200 ${
+                          isCurrent
+                            ? "bg-[#f6f4ef] md:bg-transparent text-[#1a1714] font-bold"
+                            : "text-[#d8d0c5] hover:bg-white/8 hover:text-white"
+                        }`}
+                      >
+                        <span
+                          className={`truncate ${
+                            sec.isActive ? "" : "line-through opacity-50"
+                          }`}
+                        >
+                          {idx + 2}. {formatSectionLabel(sec)}
+                        </span>
+                        <span
+                          className={`text-[9px] font-bold px-1.5 py-0.5 rounded shrink-0 transition-colors ${
+                            sec.isActive
+                              ? isCurrent
+                                ? "bg-[#4f8a2b] text-white"
+                                : "bg-white/15 text-[#F8B93C]"
+                              : "bg-white/10 text-white/40"
+                          }`}
+                        >
+                          {sec.isActive ? "ON" : "OFF"}
+                        </span>
+                      </div>
+                    );
+                  })}
 
-            <button
-              type="button"
-              onClick={() => setActiveTab("customers")}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg text-xs font-semibold transition-colors border ${
-                activeTab === "customers"
-                  ? "bg-[#241307] text-[#fdfbf7] border-[#241307]"
-                  : "bg-[#e3e0d9] text-[#231f1c] border-[#c8c3b8] hover:bg-[#d8d4cb]"
-              }`}
-            >
-              <span className="flex items-center gap-2 truncate">
-                <Users className="w-3.5 h-3.5 opacity-80 shrink-0" />
-                <span className="truncate">Customer List</span>
-              </span>
-              <span className="flex items-center gap-1 shrink-0">
-                {pendingCustomersCount > 0 && (
-                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500 text-white">
-                    {pendingCustomersCount}
+                  {/* Last. Footer */}
+                  <button
+                    type="button"
+                    data-nav-key="footer"
+                    onClick={() => {
+                      setActiveTab("sections");
+                      setEditorFocus("footer");
+                    }}
+                    className={`relative z-10 w-full md:w-[calc(100%-16px)] flex items-center justify-between gap-2 px-3.5 py-2 rounded-xl text-xs transition-colors duration-200 ${
+                      activeNavKey === "footer"
+                        ? "bg-[#f6f4ef] md:bg-transparent text-[#1a1714] font-bold"
+                        : "text-[#d8d0c5] font-semibold hover:bg-white/8 hover:text-white"
+                    }`}
+                  >
+                    <span className="truncate">
+                      {displaySections.length + 2}. Footer
+                    </span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <hr className="border-white/10 my-2.5 md:mr-4" />
+
+            {/* B2B OPERATIONS */}
+            <div className="space-y-1">
+              <button
+                type="button"
+                data-nav-key="orders"
+                onClick={() => setActiveTab("orders")}
+                className={`relative z-10 w-full md:w-[calc(100%-16px)] flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs transition-colors duration-200 ${
+                  activeNavKey === "orders"
+                    ? "bg-[#f6f4ef] md:bg-transparent text-[#1a1714] font-bold"
+                    : "text-[#d8d0c5] font-semibold hover:bg-white/8 hover:text-white"
+                }`}
+              >
+                <span className="flex items-center gap-2.5">
+                  <ClipboardList className="w-3.5 h-3.5 opacity-80" />
+                  Orders
+                </span>
+                <span
+                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full transition-colors ${
+                    activeNavKey === "orders"
+                      ? "bg-[#1a1714] text-white"
+                      : "bg-white/10 text-[#fdfbf7]"
+                  }`}
+                >
+                  {String(orders.length).padStart(2, "0")}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                data-nav-key="customers"
+                onClick={() => setActiveTab("customers")}
+                className={`relative z-10 w-full md:w-[calc(100%-16px)] flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs transition-colors duration-200 ${
+                  activeNavKey === "customers"
+                    ? "bg-[#f6f4ef] md:bg-transparent text-[#1a1714] font-bold"
+                    : "text-[#d8d0c5] font-semibold hover:bg-white/8 hover:text-white"
+                }`}
+              >
+                <span className="flex items-center gap-2.5 truncate">
+                  <Users className="w-3.5 h-3.5 opacity-80 shrink-0" />
+                  <span className="truncate">Customer List</span>
+                </span>
+                <span className="flex items-center gap-1 shrink-0">
+                  {(pendingCustomersCount > 0 || expiringLicensesCount > 0) && (
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-500 text-white">
+                      {pendingCustomersCount + expiringLicensesCount}
+                    </span>
+                  )}
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full transition-colors ${
+                      activeNavKey === "customers"
+                        ? "bg-[#1a1714] text-white"
+                        : "bg-white/10 text-[#fdfbf7]"
+                    }`}
+                  >
+                    {String(customers.length).padStart(2, "0")}
                   </span>
-                )}
-                <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-white text-[#1a1714] border border-[#c8c3b8]">
-                  {String(customers.length).padStart(2, "0")}
-                </span>
-              </span>
-            </button>
-          </div>
-
-          {/* Divider di bawah Customer List (di atas Wholesale Catalog) */}
-          <hr className="border-[#b9b3a6] my-3" />
-
-          <div className="space-y-1.5">
-            <p className="px-1 py-1 text-[11px] font-extrabold uppercase tracking-[0.06em] text-[#231f1c]">
-              WHOLESALE CATALOG
-            </p>
-
-            <div className="space-y-2">
-              <button
-                type="button"
-                onClick={() => setActiveTab("brands")}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg text-xs font-semibold transition-colors border ${
-                  activeTab === "brands"
-                    ? "bg-[#241307] text-[#fdfbf7] border-[#241307]"
-                    : "bg-[#e3e0d9] text-[#231f1c] border-[#c8c3b8] hover:bg-[#d8d4cb]"
-                }`}
-              >
-                <span className="flex items-center gap-2">
-                  <Tag className="w-3.5 h-3.5 opacity-80" />
-                  Brands
-                </span>
-                <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-white text-[#1a1714] border border-[#c8c3b8]">
-                  {String(brands.length).padStart(2, "0")}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveTab("categories")}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg text-xs font-semibold transition-colors border ${
-                  activeTab === "categories"
-                    ? "bg-[#241307] text-[#fdfbf7] border-[#241307]"
-                    : "bg-[#e3e0d9] text-[#231f1c] border-[#c8c3b8] hover:bg-[#d8d4cb]"
-                }`}
-              >
-                <span className="flex items-center gap-2">
-                  <FolderTree className="w-3.5 h-3.5 opacity-80" />
-                  Categories
-                </span>
-                <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-white text-[#1a1714] border border-[#c8c3b8]">
-                  {String(categories.length).padStart(2, "0")}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveTab("collections")}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg text-xs font-semibold transition-colors border ${
-                  activeTab === "collections"
-                    ? "bg-[#241307] text-[#fdfbf7] border-[#241307]"
-                    : "bg-[#e3e0d9] text-[#231f1c] border-[#c8c3b8] hover:bg-[#d8d4cb]"
-                }`}
-              >
-                <span className="flex items-center gap-2">
-                  <Boxes className="w-3.5 h-3.5 opacity-80" />
-                  Collections
-                </span>
-                <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-white text-[#1a1714] border border-[#c8c3b8]">
-                  {String(collections.length).padStart(2, "0")}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveTab("products")}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg text-xs font-semibold transition-colors border ${
-                  activeTab === "products"
-                    ? "bg-[#241307] text-[#fdfbf7] border-[#241307]"
-                    : "bg-[#e3e0d9] text-[#231f1c] border-[#c8c3b8] hover:bg-[#d8d4cb]"
-                }`}
-              >
-                <span className="flex items-center gap-2">
-                  <Package className="w-3.5 h-3.5 opacity-80" />
-                  Products
-                </span>
-                <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-white text-[#1a1714] border border-[#c8c3b8]">
-                  {String(products.length).padStart(2, "0")}
                 </span>
               </button>
             </div>
-          </div>
 
-          <div className="pt-2.5 border-t border-[#c6c1b6]">
+            <hr className="border-white/10 my-2.5 md:mr-4" />
+
+            {/* WHOLESALE CATALOG */}
+            <div className="space-y-1">
+              <p className="px-2 py-1 text-[10px] font-extrabold uppercase tracking-[0.12em] text-[#a3998b]">
+                WHOLESALE CATALOG
+              </p>
+
+              {(
+                [
+                  ["brands", "Brands", Tag, brands.length],
+                  ["categories", "Categories", FolderTree, categories.length],
+                  ["collections", "Collections", Boxes, collections.length],
+                  ["products", "Products", Package, products.length],
+                ] as const
+              ).map(([tabKey, label, Icon, count]) => {
+                const isAct = activeNavKey === tabKey;
+                return (
+                  <button
+                    key={tabKey}
+                    type="button"
+                    data-nav-key={tabKey}
+                    onClick={() => setActiveTab(tabKey)}
+                    className={`relative z-10 w-full md:w-[calc(100%-16px)] flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs transition-colors duration-200 ${
+                      isAct
+                        ? "bg-[#f6f4ef] md:bg-transparent text-[#1a1714] font-bold"
+                        : "text-[#d8d0c5] font-semibold hover:bg-white/8 hover:text-white"
+                    }`}
+                  >
+                    <span className="flex items-center gap-2.5">
+                      <Icon className="w-3.5 h-3.5 opacity-80" />
+                      {label}
+                    </span>
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full transition-colors ${
+                        isAct
+                          ? "bg-[#1a1714] text-white"
+                          : "bg-white/10 text-[#fdfbf7]"
+                      }`}
+                    >
+                      {String(count).padStart(2, "0")}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <hr className="border-white/10 my-2.5 md:mr-4" />
+
             <button
               type="button"
+              data-nav-key="files"
               onClick={() => setActiveTab("files")}
-              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg text-xs font-semibold transition-colors border ${
-                activeTab === "files"
-                  ? "bg-[#241307] text-[#fdfbf7] border-[#241307]"
-                  : "bg-[#e3e0d9] text-[#231f1c] border-[#c8c3b8] hover:bg-[#d8d4cb]"
+              className={`relative z-10 w-full md:w-[calc(100%-16px)] flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs transition-colors duration-200 ${
+                activeNavKey === "files"
+                  ? "bg-[#f6f4ef] md:bg-transparent text-[#1a1714] font-bold"
+                  : "text-[#d8d0c5] font-semibold hover:bg-white/8 hover:text-white"
               }`}
             >
-              <span className="flex items-center gap-2">
+              <span className="flex items-center gap-2.5">
                 <FolderOpen className="w-3.5 h-3.5 opacity-80" />
                 Files
               </span>
-              <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-white text-[#1a1714] border border-[#c8c3b8]">
+              <span
+                className={`text-[10px] font-bold px-2 py-0.5 rounded-full transition-colors ${
+                  activeNavKey === "files"
+                    ? "bg-[#1a1714] text-white"
+                    : "bg-white/10 text-[#fdfbf7]"
+                }`}
+              >
                 {String(mediaList.length).padStart(2, "0")}
               </span>
             </button>
           </div>
+          </div>
         </aside>
 
-        {/* Main Workspace */}
-        <main className="flex-1 min-w-0 h-full overflow-hidden p-4 md:p-5 flex flex-col">
+        {/* Main Connected Workspace */}
+        <main className="flex-1 min-w-0 h-full overflow-hidden bg-[#f6f4ef] md:rounded-tl-xl md:rounded-bl-xl p-4 md:p-6 flex flex-col">
           {loading ? (
             <div className="py-20 text-center text-xs text-[#6b6256]">
               Loading CMS data...
@@ -4021,8 +4207,9 @@ export default function AdminDashboardClient({
                               className="w-full accent-[#8c6d48]"
                             />
                             <p className="text-[10px] text-[#6b6256]">
-                              Ukuran teks, padding, dan tinggi pita marquee
-                              mengikuti ukuran logo.
+                              Text size, padding, and marquee band
+                              height scale automatically with 
+                              logo size.
                             </p>
                           </div>
                         </div>
@@ -4501,8 +4688,8 @@ export default function AdminDashboardClient({
                             />
                           </label>
                           <p className="text-[10px] text-[#6b6256]">
-                            Jika aktif, seluruh section hanya tampil untuk
-                            customer yang sudah login.
+                            When enabled, this entire section is
+                            only visible to logged-in wholesale customers.
                           </p>
                         </div>
                       )}
@@ -4567,8 +4754,23 @@ export default function AdminDashboardClient({
               </div>
             </div>
           ) : (
-            <div className="flex-1 min-h-0 overflow-y-auto">
-              {activeTab === "orders" ? (
+            <div
+              key={activeTab}
+              className="flex-1 min-h-0 overflow-y-auto lac-panel-reveal"
+            >
+              {activeTab === "dashboard" ? (
+                <AdminB2BDashboard
+                  adminEmail={adminEmail}
+                  customers={customers}
+                  products={products}
+                  categories={categories}
+                  brandsCount={brands.length}
+                  orders={orders}
+                  onNavigate={(tab) => setActiveTab(tab)}
+                  onTriggerAlertEmail={handleTriggerAlertEmail}
+                  sendingAlerts={sendingAlerts}
+                />
+              ) : activeTab === "orders" ? (
                 <div className="max-w-6xl mx-auto space-y-6">
                   <div className="bg-white border border-[#e0dbd0] rounded-xl overflow-hidden shadow-xs">
                     <div className="px-5 py-4 border-b border-[#ece8df] flex items-center justify-between">
@@ -4615,210 +4817,13 @@ export default function AdminDashboardClient({
                   </div>
                 </div>
               ) : activeTab === "customers" ? (
-                <div className="max-w-6xl mx-auto space-y-5">
-                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      {(
-                        [
-                          ["ALL", `All (${customers.length})`],
-                          [
-                            "PENDING",
-                            `Pending Approval (${pendingCustomersCount})`,
-                          ],
-                          [
-                            "INVITED",
-                            `Invited (${
-                              customers.filter((c) => c.status === "INVITED")
-                                .length
-                            })`,
-                          ],
-                          [
-                            "APPROVED",
-                            `Approved (${
-                              customers.filter((c) => c.status === "APPROVED")
-                                .length
-                            })`,
-                          ],
-                          [
-                            "REJECTED",
-                            `Rejected (${
-                              customers.filter(
-                                (c) =>
-                                  c.status === "REJECTED" ||
-                                  c.status === "SUSPENDED"
-                              ).length
-                            })`,
-                          ],
-                        ] as const
-                      ).map(([code, label]) => (
-                        <button
-                          key={code}
-                          type="button"
-                          onClick={() => setCustomerFilter(code)}
-                          className={`px-3 py-1.5 rounded-lg text-[11px] font-bold border transition-colors ${
-                            customerFilter === code
-                              ? "bg-[#241307] text-white border-[#241307]"
-                              : "bg-white text-[#4a4238] border-[#dcd4c5] hover:bg-[#faf8f4]"
-                          }`}
-                        >
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <div className="relative w-full sm:w-64">
-                        <Search className="w-3.5 h-3.5 text-[#8c6d48] absolute left-3 top-1/2 -translate-y-1/2" />
-                        <input
-                          type="text"
-                          value={customerSearch}
-                          onChange={(e) => setCustomerSearch(e.target.value)}
-                          placeholder="Search company, email, license..."
-                          className="w-full pl-9 pr-3 py-2 text-xs bg-white border border-[#dcd4c5] rounded-lg focus:outline-none focus:border-[#8c6d48]"
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setShowInviteModal(true)}
-                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#1a1714] hover:bg-[#8c6d48] text-white text-xs font-bold whitespace-nowrap transition-colors"
-                      >
-                        <UserPlus className="w-3.5 h-3.5" />
-                        Invite New Customer
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="bg-white border border-[#e0dbd0] rounded-xl overflow-hidden shadow-xs">
-                    <div className="px-5 py-4 border-b border-[#ece8df] flex items-center justify-between">
-                      <h2 className="text-sm font-bold text-[#1a1714]">
-                        Wholesale Customers ({filteredCustomers.length})
-                      </h2>
-                    </div>
-
-                    {filteredCustomers.length === 0 ? (
-                      <div className="p-12 text-center text-xs text-[#6b6256]">
-                        Belum ada data customer untuk filter ini. Klik
-                        &ldquo;Invite New Customer&rdquo; untuk mengundang
-                        partner baru.
-                      </div>
-                    ) : (
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-left border-collapse">
-                          <thead>
-                            <tr className="border-b border-[#ece8df] bg-[#faf8f4] text-[10px] uppercase tracking-wider text-[#6b6256]">
-                              <th className="py-3 px-4">Company / Contact</th>
-                              <th className="py-3 px-4">Email &amp; Phone</th>
-                              <th className="py-3 px-4">License / Tier</th>
-                              <th className="py-3 px-4">Status</th>
-                              <th className="py-3 px-4 text-right">Actions</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-[#f0ece3] text-xs">
-                            {filteredCustomers.map((cust) => (
-                              <tr
-                                key={cust.id}
-                                className="hover:bg-[#faf8f4] transition-colors"
-                              >
-                                <td className="py-3 px-4">
-                                  <p className="font-bold text-[#1a1714]">
-                                    {cust.companyName}
-                                  </p>
-                                  <p className="text-[11px] text-[#6b6256]">
-                                    {cust.contactName}
-                                  </p>
-                                </td>
-                                <td className="py-3 px-4">
-                                  <p className="text-[#1a1714]">
-                                    {cust.email || "—"}
-                                  </p>
-                                  {cust.phone && (
-                                    <p className="text-[10px] text-[#6b6256]">
-                                      {cust.phone}
-                                    </p>
-                                  )}
-                                </td>
-                                <td className="py-3 px-4">
-                                  <p className="font-mono text-[11px] text-[#4a4238]">
-                                    {cust.licenseNumber || "—"}
-                                  </p>
-                                  <p className="text-[10px] uppercase text-[#8c6d48] font-bold">
-                                    {cust.priceTier}
-                                  </p>
-                                </td>
-                                <td className="py-3 px-4">
-                                  <span
-                                    className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                                      cust.status === "APPROVED"
-                                        ? "bg-emerald-100 text-emerald-800"
-                                        : cust.status === "PENDING"
-                                        ? "bg-amber-100 text-amber-900"
-                                        : cust.status === "INVITED"
-                                        ? "bg-blue-100 text-blue-800"
-                                        : "bg-red-100 text-red-700"
-                                    }`}
-                                  >
-                                    {cust.status}
-                                  </span>
-                                </td>
-                                <td className="py-3 px-4 text-right">
-                                  <div className="inline-flex items-center gap-1">
-                                    {cust.status !== "APPROVED" && (
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          handleUpdateCustomerStatus(
-                                            cust,
-                                            "APPROVED"
-                                          )
-                                        }
-                                        className="inline-flex items-center gap-1 px-2 py-1 rounded bg-emerald-700 hover:bg-emerald-800 text-white text-[10px] font-bold"
-                                        title="Approve Customer"
-                                      >
-                                        <Check className="w-3 h-3" />
-                                        Approve
-                                      </button>
-                                    )}
-                                    {cust.status !== "REJECTED" && (
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          handleUpdateCustomerStatus(
-                                            cust,
-                                            "REJECTED"
-                                          )
-                                        }
-                                        className="p-1.5 text-[#6b6256] hover:text-amber-700"
-                                        title="Reject / Suspend"
-                                      >
-                                        <Ban className="w-3.5 h-3.5" />
-                                      </button>
-                                    )}
-                                    <button
-                                      type="button"
-                                      onClick={() => handleCopyInviteLink(cust)}
-                                      className="p-1.5 text-[#6b6256] hover:text-[#1a1714]"
-                                      title="Copy Invite Link"
-                                    >
-                                      <Copy className="w-3.5 h-3.5" />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleDeleteCustomer(cust)}
-                                      className="p-1.5 text-[#6b6256] hover:text-red-600"
-                                      title="Delete Customer"
-                                    >
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
-                                  </div>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </div>
-                </div>
+                <CustomerListView
+                  customers={customers}
+                  onCustomersChange={setCustomers}
+                  onToast={showToast}
+                  onTriggerAlertEmail={handleTriggerAlertEmail}
+                  sendingAlerts={sendingAlerts}
+                />
               ) : activeTab === "brands" ? (
                 <div className="max-w-5xl mx-auto space-y-6">
                   <form
@@ -5125,8 +5130,8 @@ export default function AdminDashboardClient({
                         Files ({mediaList.length})
                       </h2>
                       <p className="text-xs text-[#6b6256]">
-                        Upload atau pilih file untuk dipakai pada Product atau
-                        bagian web lainnya.
+                        Upload or select files to use across 
+                        products and storefront sections.
                       </p>
                     </div>
 
@@ -5150,8 +5155,8 @@ export default function AdminDashboardClient({
                   <div className="bg-white border border-[#e0dbd0] rounded-xl overflow-hidden shadow-xs">
                     {mediaList.length === 0 ? (
                       <div className="p-12 text-center text-xs text-[#6b6256]">
-                        Belum ada file tersimpan. Klik &ldquo;Upload File&rdquo;
-                        untuk menambahkan gambar.
+                        No files uploaded yet. Click &ldquo;
+                        Upload File&rdquo; to add an image.
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 p-5">
@@ -5754,194 +5759,7 @@ export default function AdminDashboardClient({
           </div>
         </div>
       )}
-
-      {/* Invite Customer Modal */}
-      {showInviteModal && (
-        <div
-          onClick={() => setShowInviteModal(false)}
-          className="fixed inset-0 bg-[#1a1714]/60 backdrop-blur-xs z-50 flex items-center justify-center p-4"
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="bg-white border border-[#e0dbd0] rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden"
-          >
-            <div className="px-6 py-4 border-b border-[#ece8df] flex items-center justify-between">
-              <h3 className="text-sm font-bold text-[#1a1714]">
-                Invite New Customer
-              </h3>
-              <button
-                type="button"
-                onClick={() => setShowInviteModal(false)}
-                className="text-[#6b6256] hover:text-[#1a1714]"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <form onSubmit={handleInviteCustomer} className="p-6 space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
-                    Company Name *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={inviteForm.companyName}
-                    onChange={(e) =>
-                      setInviteForm({
-                        ...inviteForm,
-                        companyName: e.target.value,
-                      })
-                    }
-                    placeholder="Sunshine Tobacco LLC"
-                    className="w-full px-3 py-2 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
-                    Contact Name *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={inviteForm.contactName}
-                    onChange={(e) =>
-                      setInviteForm({
-                        ...inviteForm,
-                        contactName: e.target.value,
-                      })
-                    }
-                    placeholder="John Perez"
-                    className="w-full px-3 py-2 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
-                    Business Email *
-                  </label>
-                  <input
-                    type="email"
-                    required
-                    value={inviteForm.email}
-                    onChange={(e) =>
-                      setInviteForm({ ...inviteForm, email: e.target.value })
-                    }
-                    placeholder="buyer@retailer.com"
-                    className="w-full px-3 py-2 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
-                    Phone
-                  </label>
-                  <input
-                    type="text"
-                    value={inviteForm.phone}
-                    onChange={(e) =>
-                      setInviteForm({ ...inviteForm, phone: e.target.value })
-                    }
-                    placeholder="(305) 555-0192"
-                    className="w-full px-3 py-2 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="space-y-1">
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
-                    License / Tax ID
-                  </label>
-                  <input
-                    type="text"
-                    value={inviteForm.licenseNumber}
-                    onChange={(e) =>
-                      setInviteForm({
-                        ...inviteForm,
-                        licenseNumber: e.target.value,
-                      })
-                    }
-                    placeholder="FL-TOB-8821"
-                    className="w-full px-3 py-2 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
-                    Price Tier
-                  </label>
-                  <select
-                    value={inviteForm.priceTier}
-                    onChange={(e) =>
-                      setInviteForm({
-                        ...inviteForm,
-                        priceTier: e.target.value,
-                      })
-                    }
-                    className="w-full px-3 py-2 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
-                  >
-                    <option value="STANDARD">Standard</option>
-                    <option value="PREFERRED">Preferred</option>
-                    <option value="DISTRIBUTOR">Distributor</option>
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
-                    Initial Status
-                  </label>
-                  <select
-                    value={inviteForm.status}
-                    onChange={(e) =>
-                      setInviteForm({ ...inviteForm, status: e.target.value })
-                    }
-                    className="w-full px-3 py-2 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
-                  >
-                    <option value="INVITED">Invited</option>
-                    <option value="PENDING">Pending Approval</option>
-                    <option value="APPROVED">Approved Immediately</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6b6256]">
-                  Internal Notes / Terms
-                </label>
-                <textarea
-                  rows={2}
-                  value={inviteForm.notes}
-                  onChange={(e) =>
-                    setInviteForm({ ...inviteForm, notes: e.target.value })
-                  }
-                  placeholder="Account rep notes, credit terms, delivery route..."
-                  className="w-full px-3 py-2 text-xs bg-[#fdfbf7] border border-[#dcd4c5] rounded-lg"
-                />
-              </div>
-
-              <div className="pt-3 border-t border-[#ece8df] flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowInviteModal(false)}
-                  className="px-4 py-2 rounded-lg border border-[#dcd4c5] text-xs font-bold text-[#4a4238]"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="inline-flex items-center gap-1.5 px-5 py-2 rounded-lg bg-[#1a1714] hover:bg-[#8c6d48] text-white text-xs font-bold disabled:opacity-50"
-                >
-                  <UserPlus className="w-3.5 h-3.5" />
-                  {saving ? "Saving..." : "Send Invite"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
+   
       {/* Import from Excel Modal */}
       {showImportModal && (
         <div
@@ -5969,11 +5787,12 @@ export default function AdminDashboardClient({
               <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-xl bg-[#faf8f4] border border-[#e5dfd3]">
                 <div className="space-y-0.5">
                   <p className="font-bold text-[#1a1714]">
-                    Format Kolom Otomatis (Upsert by SKU)
+                    Automatic Column Mapping (Upsert by SKU)
                   </p>
                   <p className="text-[11px] text-[#6b6256]">
-                    SKU yang sudah ada akan diupdate; SKU baru &amp; kategori
-                    baru dibuat otomatis.
+                    Existing SKUs will be updated; 
+                    new SKUs and categories are 
+                    created automatically.
                   </p>
                 </div>
                 <button
@@ -5990,11 +5809,13 @@ export default function AdminDashboardClient({
                 <FileSpreadsheet className="w-7 h-7 text-emerald-700" />
                 <span className="font-bold text-[#1a1714]">
                   {importFileName ||
-                    "Klik untuk pilih file Excel (.xlsx, .xls, .csv)"}
+                    "(Click to select an Excel file (.xlsx, .xls, .csv)"}
                 </span>
                 <span className="text-[11px] text-[#6b6256]">
-                  Kolom wajib: SKU, Name (opsional: Category, Brand, Wholesale
-                  Price, QBO Price, Inventory, Origin, Shape, Box Info)
+                  Required columns: SKU, Name 
+                  (optional: Category, Brand, Wholesale 
+                  Price, QBO Price, Inventory, Origin, 
+                  Shape, Box Info)
                 </span>
                 <input
                   type="file"
@@ -6011,7 +5832,7 @@ export default function AdminDashboardClient({
               {importRows.length > 0 && (
                 <div className="space-y-2">
                   <p className="text-[11px] font-bold text-[#1a1714]">
-                    Preview ({importRows.length} baris siap diimport):
+                    Preview ({importRows.length} rows ready to import):
                   </p>
                   <div className="max-h-48 overflow-auto border border-[#e5dfd3] rounded-lg">
                     <table className="w-full text-left border-collapse text-[11px]">

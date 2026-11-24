@@ -697,7 +697,7 @@ export function HomeStorefront({
                       {hero.subtext}
                     </p>
 
-                    <div className="flex flex-col sm:flex-row gap-4 justify-center items-center pb-8 w-full">
+                    <div className="flex flex-col sm:flex-row gap-4 justify-center items-center pb-14 md:pb-16 w-full">
                       <Link
                         href={hero.primaryCta?.href ?? "/products"}
                         className="group relative overflow-hidden w-full sm:w-65 bg-[#8c6d48] text-white px-6 py-3 text-[10px] tracking-[0.15em] font-bold transition-all duration-500 flex items-center justify-center shadow-md rounded-sm"
@@ -709,19 +709,6 @@ export function HomeStorefront({
                           </span>
                         </span>
                         <div className="absolute inset-0 h-full w-full scale-0 rounded-sm transition-all duration-500 ease-out group-hover:scale-100 group-hover:bg-[#F8B93C] z-0" />
-                      </Link>
-
-                      <Link
-                        href={hero.secondaryCta?.href ?? "/contact"}
-                        className="group relative overflow-hidden w-full sm:w-65 border border-[#8c6d48] bg-transparent text-[#8c6d48] px-6 py-3 text-[10px] tracking-[0.15em] font-bold transition-colors duration-500 flex items-center justify-center hover:text-white rounded-sm"
-                      >
-                        <span className="relative z-10 flex items-center gap-3">
-                          {hero.secondaryCta?.label ?? "WHOLESALE ACCESS"}{" "}
-                          <span className="group-hover:translate-x-1.5 transition-transform duration-300">
-                            →
-                          </span>
-                        </span>
-                        <div className="absolute inset-0 h-full w-full origin-left scale-x-0 bg-[#F8B93C] border-[#F8B93C] transition-transform duration-500 ease-out group-hover:scale-x-100 z-0" />
                       </Link>
                     </div>
 
