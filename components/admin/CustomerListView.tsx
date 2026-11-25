@@ -185,7 +185,10 @@ export function CustomerListView({
         onToast("success", `Customer "${data.customer.companyName}" updated.`);
       } else {
         onCustomersChange((prev) => [data.customer, ...prev]);
-        onToast("success", `Customer "${data.customer.companyName}" invited.`);
+        onToast(
+          data.emailSent ? "success" : "error",
+          data.emailNote || `Customer "${data.customer.companyName}" created.`
+        );
       }
       setShowModal(false);
     } catch {

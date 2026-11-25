@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { GlassSidebar } from "@/components/admin/GlassSidebar";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import * as XLSX from "xlsx";
@@ -294,16 +295,6 @@ export default function AdminDashboardClient({
 }) {
   const router = useRouter();
   const previewIframeRef = useRef<HTMLIFrameElement | null>(null);
-  const navContainerRef = useRef<HTMLDivElement | null>(null);
-  const prevNavKeyRef = useRef<string | null>(null);
-  const prevNavTopRef = useRef<number>(0);
-  const [navBlob, setNavBlob] = useState({
-    top: 0,
-    bottom: 0,
-    visible: false,
-    transition: "none",
-  });
-
   const [activeTab, setActiveTab] = useState<AdminTab>("dashboard");
   const [sendingAlerts, setSendingAlerts] = useState(false);
   const [editorFocus, setEditorFocus] = useState<EditorFocus>("homepage");
@@ -415,6 +406,48 @@ export default function AdminDashboardClient({
   const [products, setProducts] = useState<ProductRecord[]>([]);
   const [mediaList, setMediaList] = useState<CmsMediaRecord[]>([]);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [fileGridSize, setFileGridSize] = useState<"sm" | "md" | "lg">("md");
+  const [selectedFileIds, setSelectedFileIds] = useState<Array<number | string>>([]);
+  const [showDeleteFilesModal, setShowDeleteFilesModal] = useState(false);
+  const [deletingFiles, setDeletingFiles] = useState(false);
+
+  const toggleSelectFile = (id: number | string) => {
+    setSelectedFileIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleDeleteSelectedFiles = async () => {
+    if (selectedFileIds.length === 0) return;
+    setDeletingFiles(true);
+    try {
+      const res = await fetch("/api/cms/media", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: selectedFileIds }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showToast("error", data.error || "Failed to delete selected files.");
+        return;
+      }
+      setMediaList((prev) =>
+        prev.filter((f) => !selectedFileIds.includes(f.id))
+      );
+      showToast(
+        "success",
+        `${selectedFileIds.length} file${
+          selectedFileIds.length > 1 ? "s" : ""
+        } permanently deleted.`
+      );
+      setSelectedFileIds([]);
+      setShowDeleteFilesModal(false);
+    } catch {
+      showToast("error", "Error deleting selected files.");
+    } finally {
+      setDeletingFiles(false);
+    }
+  };
   const [productSearch, setProductSearch] = useState("");
   const [showProductModal, setShowProductModal] = useState(false);
   const [productForm, setProductForm] = useState(EMPTY_PRODUCT_FORM);
@@ -1575,53 +1608,6 @@ export default function AdminDashboardClient({
         : "header"
       : activeTab;
 
-  useLayoutEffect(() => {
-    const container = navContainerRef.current;
-    if (!container) return;
-
-    const measure = (animate: boolean) => {
-      const target = container.querySelector<HTMLElement>(
-        `[data-nav-key="${activeNavKey}"]`
-      );
-      if (!target) {
-        setNavBlob((prev) => (prev.visible ? { ...prev, visible: false } : prev));
-        return;
-      }
-
-      const cRect = container.getBoundingClientRect();
-      const tRect = target.getBoundingClientRect();
-      const nextTop = Math.round(tRect.top - cRect.top);
-      const nextBottom = Math.round(cRect.bottom - tRect.bottom);
-
-      const isMovingDown = nextTop > prevNavTopRef.current;
-      const shouldAnimate =
-        animate &&
-        prevNavKeyRef.current !== null &&
-        prevNavKeyRef.current !== activeNavKey;
-
-      const transition = shouldAnimate
-        ? isMovingDown
-          ? "bottom 210ms cubic-bezier(0.22, 1, 0.36, 1), top 440ms cubic-bezier(0.32, 1.08, 0.48, 1), opacity 160ms ease"
-          : "top 210ms cubic-bezier(0.22, 1, 0.36, 1), bottom 440ms cubic-bezier(0.32, 1.08, 0.48, 1), opacity 160ms ease"
-        : "none";
-
-      prevNavKeyRef.current = activeNavKey;
-      prevNavTopRef.current = nextTop;
-
-      setNavBlob({
-        top: nextTop,
-        bottom: nextBottom,
-        visible: true,
-        transition,
-      });
-    };
-
-    measure(true);
-
-    const ro = new ResizeObserver(() => measure(false));
-    ro.observe(container);
-    return () => ro.disconnect();
-  }, [activeNavKey, themeSectionsOpen, displaySections.length, loading]);
   return (
     <div className="relative z-100 h-screen overflow-hidden bg-[#1a1714] text-[#1a1714] flex flex-col">
       <style
@@ -1630,17 +1616,15 @@ export default function AdminDashboardClient({
             @keyframes lacPanelReveal {
               0% {
                 opacity: 0;
-                filter: blur(5px);
                 transform: translateY(6px);
               }
               100% {
                 opacity: 1;
-                filter: blur(0px);
                 transform: translateY(0px);
               }
             }
             .lac-panel-reveal {
-              animation: lacPanelReveal 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+              animation: lacPanelReveal 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
             }
             .lac-sidebar-scroll {
               scrollbar-width: none;
@@ -1649,57 +1633,166 @@ export default function AdminDashboardClient({
             .lac-sidebar-scroll::-webkit-scrollbar {
               display: none;
             }
-            .lac-blob-indicator {
-              display: none;
+
+            /* Right Inspector Dark Glassmorphism (Identik dengan Sidebar Kiri) */
+            .lac-glass-inspector {
+              color-scheme: dark;
+              background: radial-gradient(140% 38% at 18% 0%, rgba(196, 164, 124, 0.22) 0%, rgba(44, 37, 31, 0.72) 40%, rgba(22, 19, 16, 0.94) 100%) !important;
+              border: 1px solid rgba(255, 255, 255, 0.12) !important;
+              box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.16), 0 12px 32px rgba(0, 0, 0, 0.4) !important;
+              color: #e8e3dc !important;
             }
-            @media (min-width: 768px) {
-              .lac-blob-indicator {
-                display: block;
-                position: absolute;
-                left: 12px;
-                right: -1px;
-                margin: 0 !important;
-                background: #f6f4ef;
-                border-radius: 12px 0 0 12px;
-                pointer-events: none;
-                z-index: 0;
-                will-change: top, bottom;
-              }
-              .lac-blob-indicator::before {
-                content: "";
-                position: absolute;
-                right: 1px;
-                top: -12px;
-                width: 12px;
-                height: 12px;
-                pointer-events: none;
-                background: radial-gradient(circle at 0 0, transparent 11.5px, #f6f4ef 12px);
-              }
-              .lac-blob-indicator::after {
-                content: "";
-                position: absolute;
-                right: 1px;
-                bottom: -12px;
-                width: 12px;
-                height: 12px;
-                pointer-events: none;
-                background: radial-gradient(circle at 0 100%, transparent 11.5px, #f6f4ef 12px);
-              }
+            .lac-glass-inspector > div:first-child {
+              background: rgba(24, 20, 17, 0.78) !important;
+              backdrop-filter: blur(16px);
+              border-color: rgba(255, 255, 255, 0.1) !important;
+            }
+            .lac-glass-inspector h1,
+            .lac-glass-inspector h2,
+            .lac-glass-inspector h3,
+            .lac-glass-inspector h4,
+            .lac-glass-inspector strong {
+              color: #ffffff !important;
+            }
+            .lac-glass-inspector label,
+            .lac-glass-inspector p,
+            .lac-glass-inspector span {
+              color: #d8d0c5;
+            }
+            .lac-glass-inspector .text-\\[\\#8c6d48\\] {
+              color: #dfb97c !important;
+            }
+            .lac-glass-inspector .text-\\[\\#1a1714\\] {
+              color: #f6f4ef !important;
+            }
+            .lac-glass-inspector .text-\\[\\#6b6256\\],
+            .lac-glass-inspector .text-\\[\\#4a4238\\] {
+              color: #c2b8aa !important;
+            }
+            .lac-glass-inspector .bg-white,
+            .lac-glass-inspector .bg-\\[\\#faf8f4\\],
+            .lac-glass-inspector .bg-\\[\\#fdfbf7\\],
+            .lac-glass-inspector .bg-\\[\\#f6f4ef\\],
+            .lac-glass-inspector .bg-\\[\\#f8f6f2\\],
+            .lac-glass-inspector .bg-\\[\\#ebe8e1\\] {
+              background-color: rgba(255, 255, 255, 0.06) !important;
+              border-color: rgba(255, 255, 255, 0.12) !important;
+            }
+            .lac-glass-inspector hr,
+            .lac-glass-inspector .border-b,
+            .lac-glass-inspector .border-t,
+            .lac-glass-inspector .border {
+              border-color: rgba(255, 255, 255, 0.11);
+            }
+            .lac-glass-inspector input:not([type="color"]):not([type="range"]):not([type="checkbox"]),
+            .lac-glass-inspector select,
+            .lac-glass-inspector textarea {
+              background-color: rgba(255, 255, 255, 0.07) !important;
+              border-color: rgba(255, 255, 255, 0.14) !important;
+              color: #ffffff !important;
+            }
+            .lac-glass-inspector input.bg-transparent {
+              background-color: transparent !important;
+              border: none !important;
+            }
+            .lac-glass-inspector input[type="color"] {
+              background-color: rgba(255, 255, 255, 0.08) !important;
+              border-color: rgba(255, 255, 255, 0.18) !important;
+            }
+            .lac-glass-inspector select option {
+              background-color: #1c1916;
+              color: #ffffff;
+            }
+            /* Range Slider: Glass Track & Frosted Thumb */
+            .lac-glass-inspector input[type="range"] {
+              -webkit-appearance: none;
+              appearance: none;
+              height: 4px;
+              border-radius: 9999px;
+              background: rgba(255, 255, 255, 0.16);
+              outline: none;
+            }
+            .lac-glass-inspector input[type="range"]::-webkit-slider-thumb {
+              -webkit-appearance: none;
+              appearance: none;
+              width: 14px;
+              height: 14px;
+              border-radius: 9999px;
+              background: #f6f4ef;
+              border: 2px solid rgba(26, 23, 20, 0.65);
+              box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+              cursor: pointer;
+            }
+            .lac-glass-inspector input[type="range"]::-moz-range-thumb {
+              width: 14px;
+              height: 14px;
+              border-radius: 9999px;
+              background: #f6f4ef;
+              border: 2px solid rgba(26, 23, 20, 0.65);
+              box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+              cursor: pointer;
+            }
+            /* Switch Toggle: Frosted Glass Contrast (tidak hijau) */
+            .lac-glass-inspector [role="switch"] {
+              border: 1px solid rgba(255, 255, 255, 0.16);
+              align-items: center;
+            }
+            .lac-glass-inspector [role="switch"][aria-checked="true"] {
+              background-color: rgba(255, 255, 255, 0.34) !important;
+              border-color: rgba(255, 255, 255, 0.45);
+              box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
+            }
+            .lac-glass-inspector [role="switch"][aria-checked="false"] {
+              background-color: rgba(255, 255, 255, 0.1) !important;
+            }
+            .lac-glass-inspector [role="switch"] > span {
+              margin-top: 0 !important;
+              background-color: #f6f4ef !important;
+            }
+            /* Segmented Control (Center / Left & Full / Left / Right) */
+            .lac-glass-inspector .grid.grid-cols-2 > button.bg-white,
+            .lac-glass-inspector .grid.grid-cols-3 > button.bg-\\[\\#241307\\] {
+              background-color: #f6f4ef !important;
+              color: #1a1714 !important;
+              border-color: transparent !important;
+            }
+            /* Glass Buttons (Upload, Add Card) */
+            .lac-glass-inspector label.cursor-pointer.text-white,
+            .lac-glass-inspector > div:not(:first-child) button.bg-\\[\\#1a1714\\]:not(.lac-btn-save) {
+              background-color: rgba(255, 255, 255, 0.12) !important;
+              border: 1px solid rgba(255, 255, 255, 0.18);
+              color: #ffffff !important;
+            }
+            .lac-glass-inspector label.cursor-pointer.text-white:hover,
+            .lac-glass-inspector > div:not(:first-child) button.bg-\\[\\#1a1714\\]:not(.lac-btn-save):hover {
+              background-color: rgba(255, 255, 255, 0.2) !important;
+            }
+            /* Save Button Hijau #51853D di SEMUA Theme Editor (Header, Footer, semua Section) */
+            .lac-glass-inspector button.lac-btn-save,
+            .lac-glass-inspector > div:first-child button {
+              background-color: #51853D !important;
+              border: 1px solid rgba(255, 255, 255, 0.18) !important;
+              color: #ffffff !important;
+              box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 4px 12px rgba(81, 133, 61, 0.35) !important;
+            }
+            .lac-glass-inspector button.lac-btn-save:hover,
+            .lac-glass-inspector > div:first-child button:hover {
+              background-color: #437032 !important;
             }
           `,
         }}
       />
-      <header className="h-14 bg-[#1a1714] text-[#fdfbf7] px-5 flex items-center justify-between border-b border-white/10 sticky top-0 z-20 shrink-0">
+      <header className="h-18 bg-[#1a1714] text-[#fdfbf7] px-5 flex items-center justify-between sticky top-0 z-20 shrink-0">
         <div className="flex items-center gap-3">
           <img
             src="/lacigars-logo.png"
             alt="LAC Admin"
-            className="h-7 w-auto object-contain"
+            className="h-11 w-auto object-contain"
           />
-          <span className="text-xs font-bold tracking-[0.18em] uppercase text-[#F8B93C]">
-            LAC Storefront CMS
+          <span className="text-base font-extrabold tracking-[0px] uppercase text-[#F8B93C]">
+            LACORDERS
           </span>
-          <span className="hidden sm:inline-block text-[10px] px-2 py-0.5 rounded bg-white/10 text-[#d8d0c5]">
+          <span className="hidden sm:inline-block text-[10px] px-2.5 py-1 rounded-full bg-white/[0.07] border border-white/[0.12] text-[#d8d0c5]">
             {adminEmail || "Admin"}
           </span>
         </div>
@@ -1708,7 +1801,7 @@ export default function AdminDashboardClient({
           <button
             type="button"
             onClick={loadData}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-[11px] font-semibold bg-white/10 hover:bg-white/20 text-[#fdfbf7] transition-colors"
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-[11px] font-semibold bg-white/[0.08] hover:bg-white/[0.16] border border-white/[0.14] backdrop-blur-md shadow-[inset_0_1px_0_rgba(255,255,255,0.18)] text-[#fdfbf7] transition-all active:scale-95"
           >
             <RefreshCw
               className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`}
@@ -1718,7 +1811,7 @@ export default function AdminDashboardClient({
           <button
             type="button"
             onClick={handleLogout}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-[11px] font-semibold bg-white/10 hover:bg-red-600 text-[#fdfbf7] transition-colors"
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-[11px] font-semibold bg-white/[0.08] hover:bg-red-500/25 border border-white/[0.14] hover:border-red-400/40 backdrop-blur-md shadow-[inset_0_1px_0_rgba(255,255,255,0.18)] text-[#fdfbf7] hover:text-red-200 transition-all active:scale-95"
           >
             <LogOut className="w-3.5 h-3.5" />
             Logout
@@ -1726,7 +1819,7 @@ export default function AdminDashboardClient({
           <Link
             href="/"
             target="_blank"
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded text-[11px] font-bold bg-[#F8B93C] hover:bg-[#8c6d48] text-[#1a1714] hover:text-white transition-colors"
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-[11px] font-bold bg-[#F8B93C]/20 hover:bg-[#F8B93C]/35 border border-[#F8B93C]/45 backdrop-blur-md shadow-[inset_0_1px_0_rgba(255,255,255,0.22)] text-[#F8B93C] hover:text-[#fff3d6] transition-all active:scale-95"
           >
             View Live Store
             <ExternalLink className="w-3.5 h-3.5" />
@@ -1753,312 +1846,73 @@ export default function AdminDashboardClient({
         </div>
       )}
 
-      <div className="flex-1 min-h-0 flex flex-col md:flex-row overflow-hidden">
-        {/* Left Navigation Sidebar */}
-        {/* Left Connected Dark Sidebar */}
-        {/* Left Connected Dark Sidebar */}
-        <aside className="lac-sidebar-scroll w-full md:w-64 bg-[#1a1714] text-[#d8d0c5] shrink-0 md:h-full md:overflow-y-auto select-none">
-          <div
-            ref={navContainerRef}
-            className="relative px-3 md:pl-3 md:pr-0 pt-7 pb-10"
-          >
-            {/* Single Persistent Liquid-Blob Indicator */}
-            <div
-              aria-hidden="true"
-              className="lac-blob-indicator"
-              style={{
-                top: `${navBlob.top}px`,
-                bottom: `${navBlob.bottom}px`,
-                opacity: navBlob.visible ? 1 : 0,
-                transition: navBlob.transition,
-              }}
-            />
+      <div className="flex-1 min-h-0 flex flex-col md:flex-row gap-3 p-3 pt-2 overflow-hidden">
+        <GlassSidebar
+          activeNavKey={activeNavKey}
+          adminEmail={adminEmail}
+          themeSectionsOpen={themeSectionsOpen}
+          onToggleThemeSections={() => setThemeSectionsOpen((prev) => !prev)}
+          onOpenThemeEditor={() => {
+            setActiveTab("sections");
+            setThemeSectionsOpen(true);
+          }}
+          onSelectHeader={() => {
+            setActiveTab("sections");
+            setEditorFocus("header");
+          }}
+          onSelectFooter={() => {
+            setActiveTab("sections");
+            setEditorFocus("footer");
+          }}
+          themeSections={displaySections.map((sec, idx) => ({
+            id: sec.id,
+            label: formatSectionLabel(sec),
+            isActive: sec.isActive,
+            onSelect: () => selectSection(sec, idx),
+          }))}
+          onSelectTab={(tab) => setActiveTab(tab)}
+          counts={{
+            expiringLicenses: expiringLicensesCount,
+            pendingCustomers: pendingCustomersCount,
+            orders: orders.length,
+            customers: customers.length,
+            brands: brands.length,
+            categories: categories.length,
+            collections: collections.length,
+            products: products.length,
+            files: mediaList.length,
+          }}
+          loading={loading}
+        />
 
-            <div className="relative z-10 flex flex-col gap-2">
-            {/* 0. DASHBOARD (Top Item) */}
-            <button
-              type="button"
-              data-nav-key="dashboard"
-              onClick={() => setActiveTab("dashboard")}
-              className={`relative z-10 w-full md:w-[calc(100%-16px)] flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition-colors duration-200 ${
-                activeNavKey === "dashboard"
-                  ? "bg-[#f6f4ef] md:bg-transparent text-[#1a1714]"
-                  : "text-[#d8d0c5] hover:bg-white/8 hover:text-white"
-              }`}
-            >
-              <span className="flex items-center gap-2.5">
-                <LayoutDashboard className="w-4 h-4 shrink-0" />
-                Dashboard
-              </span>
-              {expiringLicensesCount > 0 && (
-                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-500 text-white">
-                  {expiringLicensesCount}
-                </span>
-              )}
-            </button>
-
-            <hr className="border-white/10 my-2.5 md:mr-4" />
-
-            {/* THEME EDITOR */}
-            <div>
-              <div className="w-full md:w-[calc(100%-16px)] flex items-center justify-between px-2 py-1 text-[10px] font-extrabold uppercase tracking-[0.12em] text-[#a3998b]">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveTab("sections");
-                    setThemeSectionsOpen(true);
-                  }}
-                  className="flex-1 text-left hover:text-white transition-colors"
-                >
-                  THEME EDITOR
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setThemeSectionsOpen((prev) => !prev)}
-                  className="p-0.5 rounded hover:bg-white/10 text-[#d8d0c5]"
-                  title={themeSectionsOpen ? "Collapse editor" : "Expand editor"}
-                >
-                  {themeSectionsOpen ? (
-                    <ChevronDown className="w-3.5 h-3.5" />
-                  ) : (
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  )}
-                </button>
-              </div>
-
-              {themeSectionsOpen && (
-                <div className="pt-1.5 space-y-1">
-                  {/* 1. Header */}
-                  <button
-                    type="button"
-                    data-nav-key="header"
-                    onClick={() => {
-                      setActiveTab("sections");
-                      setEditorFocus("header");
-                    }}
-                    className={`relative z-10 w-full md:w-[calc(100%-16px)] flex items-center justify-between gap-2 px-3.5 py-2 rounded-xl text-xs transition-colors duration-200 ${
-                      activeNavKey === "header"
-                        ? "bg-[#f6f4ef] md:bg-transparent text-[#1a1714] font-bold"
-                        : "text-[#d8d0c5] font-semibold hover:bg-white/8 hover:text-white"
-                    }`}
-                  >
-                    <span className="truncate">1. Header</span>
-                  </button>
-
-                  {/* 2..N Theme Sections */}
-                  {displaySections.map((sec, idx) => {
-                    const key = `section-${sec.id}`;
-                    const isCurrent = activeNavKey === key;
-                    return (
-                      <div
-                        key={sec.id}
-                        data-nav-key={key}
-                        onClick={() => selectSection(sec, idx)}
-                        className={`relative z-10 w-full md:w-[calc(100%-16px)] group flex items-center justify-between gap-2 px-3.5 py-2 rounded-xl text-xs cursor-pointer transition-colors duration-200 ${
-                          isCurrent
-                            ? "bg-[#f6f4ef] md:bg-transparent text-[#1a1714] font-bold"
-                            : "text-[#d8d0c5] hover:bg-white/8 hover:text-white"
-                        }`}
-                      >
-                        <span
-                          className={`truncate ${
-                            sec.isActive ? "" : "line-through opacity-50"
-                          }`}
-                        >
-                          {idx + 2}. {formatSectionLabel(sec)}
-                        </span>
-                        <span
-                          className={`text-[9px] font-bold px-1.5 py-0.5 rounded shrink-0 transition-colors ${
-                            sec.isActive
-                              ? isCurrent
-                                ? "bg-[#4f8a2b] text-white"
-                                : "bg-white/15 text-[#F8B93C]"
-                              : "bg-white/10 text-white/40"
-                          }`}
-                        >
-                          {sec.isActive ? "ON" : "OFF"}
-                        </span>
-                      </div>
-                    );
-                  })}
-
-                  {/* Last. Footer */}
-                  <button
-                    type="button"
-                    data-nav-key="footer"
-                    onClick={() => {
-                      setActiveTab("sections");
-                      setEditorFocus("footer");
-                    }}
-                    className={`relative z-10 w-full md:w-[calc(100%-16px)] flex items-center justify-between gap-2 px-3.5 py-2 rounded-xl text-xs transition-colors duration-200 ${
-                      activeNavKey === "footer"
-                        ? "bg-[#f6f4ef] md:bg-transparent text-[#1a1714] font-bold"
-                        : "text-[#d8d0c5] font-semibold hover:bg-white/8 hover:text-white"
-                    }`}
-                  >
-                    <span className="truncate">
-                      {displaySections.length + 2}. Footer
-                    </span>
-                  </button>
-                </div>
-              )}
-            </div>
-
-            <hr className="border-white/10 my-2.5 md:mr-4" />
-
-            {/* B2B OPERATIONS */}
-            <div className="space-y-1">
-              <button
-                type="button"
-                data-nav-key="orders"
-                onClick={() => setActiveTab("orders")}
-                className={`relative z-10 w-full md:w-[calc(100%-16px)] flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs transition-colors duration-200 ${
-                  activeNavKey === "orders"
-                    ? "bg-[#f6f4ef] md:bg-transparent text-[#1a1714] font-bold"
-                    : "text-[#d8d0c5] font-semibold hover:bg-white/8 hover:text-white"
-                }`}
-              >
-                <span className="flex items-center gap-2.5">
-                  <ClipboardList className="w-3.5 h-3.5 opacity-80" />
-                  Orders
-                </span>
-                <span
-                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full transition-colors ${
-                    activeNavKey === "orders"
-                      ? "bg-[#1a1714] text-white"
-                      : "bg-white/10 text-[#fdfbf7]"
-                  }`}
-                >
-                  {String(orders.length).padStart(2, "0")}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                data-nav-key="customers"
-                onClick={() => setActiveTab("customers")}
-                className={`relative z-10 w-full md:w-[calc(100%-16px)] flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs transition-colors duration-200 ${
-                  activeNavKey === "customers"
-                    ? "bg-[#f6f4ef] md:bg-transparent text-[#1a1714] font-bold"
-                    : "text-[#d8d0c5] font-semibold hover:bg-white/8 hover:text-white"
-                }`}
-              >
-                <span className="flex items-center gap-2.5 truncate">
-                  <Users className="w-3.5 h-3.5 opacity-80 shrink-0" />
-                  <span className="truncate">Customer List</span>
-                </span>
-                <span className="flex items-center gap-1 shrink-0">
-                  {(pendingCustomersCount > 0 || expiringLicensesCount > 0) && (
-                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-500 text-white">
-                      {pendingCustomersCount + expiringLicensesCount}
-                    </span>
-                  )}
-                  <span
-                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full transition-colors ${
-                      activeNavKey === "customers"
-                        ? "bg-[#1a1714] text-white"
-                        : "bg-white/10 text-[#fdfbf7]"
-                    }`}
-                  >
-                    {String(customers.length).padStart(2, "0")}
-                  </span>
-                </span>
-              </button>
-            </div>
-
-            <hr className="border-white/10 my-2.5 md:mr-4" />
-
-            {/* WHOLESALE CATALOG */}
-            <div className="space-y-1">
-              <p className="px-2 py-1 text-[10px] font-extrabold uppercase tracking-[0.12em] text-[#a3998b]">
-                WHOLESALE CATALOG
-              </p>
-
-              {(
-                [
-                  ["brands", "Brands", Tag, brands.length],
-                  ["categories", "Categories", FolderTree, categories.length],
-                  ["collections", "Collections", Boxes, collections.length],
-                  ["products", "Products", Package, products.length],
-                ] as const
-              ).map(([tabKey, label, Icon, count]) => {
-                const isAct = activeNavKey === tabKey;
-                return (
-                  <button
-                    key={tabKey}
-                    type="button"
-                    data-nav-key={tabKey}
-                    onClick={() => setActiveTab(tabKey)}
-                    className={`relative z-10 w-full md:w-[calc(100%-16px)] flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs transition-colors duration-200 ${
-                      isAct
-                        ? "bg-[#f6f4ef] md:bg-transparent text-[#1a1714] font-bold"
-                        : "text-[#d8d0c5] font-semibold hover:bg-white/8 hover:text-white"
-                    }`}
-                  >
-                    <span className="flex items-center gap-2.5">
-                      <Icon className="w-3.5 h-3.5 opacity-80" />
-                      {label}
-                    </span>
-                    <span
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full transition-colors ${
-                        isAct
-                          ? "bg-[#1a1714] text-white"
-                          : "bg-white/10 text-[#fdfbf7]"
-                      }`}
-                    >
-                      {String(count).padStart(2, "0")}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
-            <hr className="border-white/10 my-2.5 md:mr-4" />
-
-            <button
-              type="button"
-              data-nav-key="files"
-              onClick={() => setActiveTab("files")}
-              className={`relative z-10 w-full md:w-[calc(100%-16px)] flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs transition-colors duration-200 ${
-                activeNavKey === "files"
-                  ? "bg-[#f6f4ef] md:bg-transparent text-[#1a1714] font-bold"
-                  : "text-[#d8d0c5] font-semibold hover:bg-white/8 hover:text-white"
-              }`}
-            >
-              <span className="flex items-center gap-2.5">
-                <FolderOpen className="w-3.5 h-3.5 opacity-80" />
-                Files
-              </span>
-              <span
-                className={`text-[10px] font-bold px-2 py-0.5 rounded-full transition-colors ${
-                  activeNavKey === "files"
-                    ? "bg-[#1a1714] text-white"
-                    : "bg-white/10 text-[#fdfbf7]"
-                }`}
-              >
-                {String(mediaList.length).padStart(2, "0")}
-              </span>
-            </button>
-          </div>
-          </div>
-        </aside>
-
-        {/* Main Connected Workspace */}
-        <main className="flex-1 min-w-0 h-full overflow-hidden bg-[#f6f4ef] md:rounded-tl-xl md:rounded-bl-xl p-4 md:p-6 flex flex-col">
+        {/* Main Floating Workspace */}
+        <main
+          className={`flex-1 min-w-0 h-full overflow-hidden flex flex-col ${
+            !loading && activeTab === "sections"
+              ? "bg-transparent p-0"
+              : "bg-[#f6f4ef] rounded-2xl p-4 md:p-5"
+          }`}
+        >
           {loading ? (
             <div className="py-20 text-center text-xs text-[#6b6256]">
               Loading CMS data...
             </div>
           ) : activeTab === "sections" ? (
-            <div className="w-full h-full min-h-0 flex flex-col lg:flex-row gap-4 items-stretch overflow-hidden">
+            <div className="w-full h-full min-h-0 flex flex-col lg:flex-row gap-3 items-stretch overflow-hidden">
               {/* Center Column: Own Scrollbar */}
-              <div className="flex-1 min-w-0 h-full overflow-y-auto bg-white border border-[#e0dbd0] rounded-xl shadow-xs flex flex-col">
-                <div className="px-4 py-3 bg-[#faf8f4] border-b border-[#ece8df] flex flex-wrap items-center justify-between gap-2 shrink-0">
+              <div
+                className="flex-1 min-w-0 h-full overflow-y-auto border border-white/[0.12] rounded-2xl shadow-[inset_0_1px_1px_rgba(255,255,255,0.14),0_12px_32px_rgba(0,0,0,0.4)] flex flex-col"
+                style={{
+                  background:
+                    "radial-gradient(120% 28% at 50% 0%, rgba(196, 164, 124, 0.2) 0%, rgba(36, 31, 26, 0.85) 36%, rgba(20, 17, 15, 0.96) 100%)",
+                }}
+              >
+                <div className="px-4 py-2.5 bg-white/[0.04] backdrop-blur-md border-b border-white/[0.1] flex flex-wrap items-center justify-between gap-2 shrink-0">
                   <div>
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-[#8c6d48]">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-[#dfb97c]">
                       Theme Editor Live Preview
                     </p>
-                    <h2 className="text-xs font-bold text-[#1a1714]">
+                    <h2 className="text-sm font-bold text-white">
                       {editorFocus === "header"
                         ? "Header"
                         : editorFocus === "footer"
@@ -2071,17 +1925,17 @@ export default function AdminDashboardClient({
 
                   <div className="flex items-center gap-2">
                     {editorFocus === "homepage" && selectedSection && (
-                      <div className="flex items-center gap-1 bg-[#ebe8e1] px-2 py-1 rounded-lg">
+                      <div className="flex items-center gap-1 bg-white/[0.06] border border-white/[0.12] p-0.5 rounded-[10px] shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]">
                         <button
                           type="button"
                           disabled={realSectionIndex <= 0}
                           onClick={() =>
                             handleMoveSection(realSectionIndex, -1)
                           }
-                          className="p-0.5 rounded hover:bg-white disabled:opacity-30"
+                          className="h-7 w-7 inline-flex items-center justify-center rounded-lg bg-white/[0.06] hover:bg-white/[0.18] text-white transition-all disabled:opacity-30 active:scale-95"
                           title="Move Section Up"
                         >
-                          <ArrowUp className="w-3 h-3" />
+                          <ArrowUp className="w-3.5 h-3.5" />
                         </button>
                         <button
                           type="button"
@@ -2090,51 +1944,55 @@ export default function AdminDashboardClient({
                             realSectionIndex === sections.length - 1
                           }
                           onClick={() => handleMoveSection(realSectionIndex, 1)}
-                          className="p-0.5 rounded hover:bg-white disabled:opacity-30"
+                          className="h-7 w-7 inline-flex items-center justify-center rounded-lg bg-white/[0.06] hover:bg-white/[0.18] text-white transition-all disabled:opacity-30 active:scale-95"
                           title="Move Section Down"
                         >
-                          <ArrowDown className="w-3 h-3" />
+                          <ArrowDown className="w-3.5 h-3.5" />
                         </button>
                         <button
                           type="button"
                           onClick={() => handleToggleSection(selectedSection)}
-                          className="px-1.5 py-0.5 rounded text-[10px] font-bold hover:bg-white"
+                          className={`h-7 px-2.5 rounded-lg text-[11px] font-extrabold tracking-wide transition-all active:scale-95 ${
+                            selectedSection.isActive
+                              ? "bg-[#51853D] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.22)] hover:bg-[#437032]"
+                              : "bg-white/[0.1] text-white/60 hover:bg-white/[0.18] hover:text-white"
+                          }`}
                         >
                           {selectedSection.isActive ? "ON" : "OFF"}
                         </button>
                       </div>
                     )}
 
-                    <div className="flex items-center gap-1 bg-[#ebe8e1] p-1 rounded-lg">
+                    <div className="flex items-center gap-1 bg-white/[0.06] border border-white/[0.12] p-0.5 rounded-[10px] shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]">
                       <button
                         type="button"
                         onClick={() => setPreviewViewport("desktop")}
-                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-[10px] font-bold transition-colors ${
+                        className={`h-7 inline-flex items-center gap-1.5 px-2.5 rounded-lg text-[11px] font-bold transition-all active:scale-95 ${
                           previewViewport === "desktop"
-                            ? "bg-[#1a1714] text-white"
-                            : "text-[#4a4238]"
+                            ? "bg-[#f6f4ef] text-[#1a1714] shadow-sm"
+                            : "text-[#d8d0c5] hover:bg-white/[0.12] hover:text-white"
                         }`}
                       >
-                        <Monitor className="w-3 h-3" />
+                        <Monitor className="w-3.5 h-3.5" />
                         Desktop
                       </button>
                       <button
                         type="button"
                         onClick={() => setPreviewViewport("mobile")}
-                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-[10px] font-bold transition-colors ${
+                        className={`h-7 inline-flex items-center gap-1.5 px-2.5 rounded-lg text-[11px] font-bold transition-all active:scale-95 ${
                           previewViewport === "mobile"
-                            ? "bg-[#1a1714] text-white"
-                            : "text-[#4a4238]"
+                            ? "bg-[#f6f4ef] text-[#1a1714] shadow-sm"
+                            : "text-[#d8d0c5] hover:bg-white/[0.12] hover:text-white"
                         }`}
                       >
-                        <Smartphone className="w-3 h-3" />
+                        <Smartphone className="w-3.5 h-3.5" />
                         Mobile
                       </button>
                     </div>
                   </div>
                 </div>
 
-                <div className="p-3 bg-[#e4dfd5] flex-1 min-h-0 flex justify-center">
+                <div className="p-3 bg-black/20 flex-1 min-h-0 flex justify-center">
                   <div
                     className={`w-full h-full bg-white border border-[#cfc6b6] rounded-xl overflow-hidden shadow-md transition-all ${
                       previewViewport === "mobile"
@@ -2154,7 +2012,7 @@ export default function AdminDashboardClient({
               </div>
 
               {/* Right Column: Own Scrollbar */}
-              <div className="w-full lg:w-68 shrink-0 h-full overflow-y-auto bg-white border border-[#e0dbd0] rounded-xl shadow-xs">
+              <div className="lac-glass-inspector lac-sidebar-scroll w-full lg:w-68 shrink-0 h-full overflow-y-auto rounded-2xl">
                 {editorFocus === "header" ? (
                   <>
                     <div className="px-4 py-3.5 border-b border-[#ece8df] flex items-center justify-between gap-2 sticky top-0 bg-white z-10">
@@ -2170,7 +2028,7 @@ export default function AdminDashboardClient({
                         type="button"
                         disabled={saving}
                         onClick={handleSaveHeaderGroup}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#1a1714] hover:bg-[#8c6d48] text-white text-[11px] font-bold transition-colors disabled:opacity-50 shrink-0"
+                        className="lac-btn-save inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#51853D] hover:bg-[#437032] text-white text-[11px] font-bold transition-colors disabled:opacity-50 shrink-0"
                       >
                         <Save className="w-3 h-3" />
                         {saving ? "..." : "Save"}
@@ -4181,9 +4039,9 @@ export default function AdminDashboardClient({
                         </div>
                       )}
 
-                      {/* BRAND MARQUEE LOGO SIZE */}
+                      {/* BRAND MARQUEE LOGO SIZE & VERTICAL POSITION */}
                       {selectedSection.type === "BRAND_MARQUEE" && (
-                        <div className="space-y-2 pt-2 border-t border-[#f0ece3]">
+                        <div className="space-y-3 pt-2 border-t border-[#f0ece3]">
                           <p className="text-[10px] font-bold uppercase tracking-wider text-[#8c6d48]">
                             Brand Logo Size
                           </p>
@@ -4207,10 +4065,87 @@ export default function AdminDashboardClient({
                               className="w-full accent-[#8c6d48]"
                             />
                             <p className="text-[10px] text-[#6b6256]">
-                              Text size, padding, and marquee band
-                              height scale automatically with 
-                              logo size.
+                              Text size, padding, and marquee band height scale
+                              automatically with logo size.
                             </p>
+                          </div>
+
+                          <div className="space-y-2.5 pt-2 border-t border-[#f0ece3]">
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-[#8c6d48]">
+                              Marquee Position (Up / Down)
+                            </p>
+
+                            {/* Front Marquee (Yellow) */}
+                            <div className="space-y-1">
+                              <div className="flex items-center justify-between text-[10px] text-[#6b6256]">
+                                <span>Front Marquee (Yellow)</span>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-mono font-bold text-[#1a1714]">
+                                    {Number(parsedEditorObj.frontOffsetY ?? 0)}px
+                                  </span>
+                                  {Number(parsedEditorObj.frontOffsetY ?? 0) !==
+                                    0 && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        updateNestedFields({ frontOffsetY: 0 })
+                                      }
+                                      className="text-[9px] px-1.5 py-0.5 rounded bg-white/10 hover:bg-white/20 text-white"
+                                    >
+                                      Reset
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                              <input
+                                type="range"
+                                min={-150}
+                                max={150}
+                                value={Number(parsedEditorObj.frontOffsetY ?? 0)}
+                                onChange={(e) =>
+                                  updateNestedFields({
+                                    frontOffsetY: Number(e.target.value),
+                                  })
+                                }
+                                className="w-full accent-[#8c6d48]"
+                              />
+                            </div>
+
+                            {/* Back Marquee (Gray) */}
+                            <div className="space-y-1">
+                              <div className="flex items-center justify-between text-[10px] text-[#6b6256]">
+                                <span>Back Marquee (Gray)</span>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-mono font-bold text-[#1a1714]">
+                                    {Number(parsedEditorObj.backOffsetY ?? 0)}px
+                                  </span>
+                                  {Number(parsedEditorObj.backOffsetY ?? 0) !==
+                                    0 && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        updateNestedFields({ backOffsetY: 0 })
+                                      }
+                                      className="text-[9px] px-1.5 py-0.5 rounded bg-white/10 hover:bg-white/20 text-white"
+                                    >
+                                      Reset
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                              <input
+                                type="range"
+                                min={-150}
+                                max={150}
+                                value={Number(parsedEditorObj.backOffsetY ?? 0)}
+                                onChange={(e) =>
+                                  updateNestedFields({
+                                    backOffsetY: Number(e.target.value),
+                                  })
+                                }
+                                className="w-full accent-[#8c6d48]"
+                              />
+                            </div>
                           </div>
                         </div>
                       )}
@@ -5123,95 +5058,260 @@ export default function AdminDashboardClient({
                   </div>
                 </div>
               ) : activeTab === "files" ? (
-                <div className="max-w-6xl mx-auto space-y-6">
-                  <div className="bg-white border border-[#e0dbd0] rounded-xl p-5 shadow-xs flex flex-wrap items-center justify-between gap-4">
+                <div className="max-w-7xl mx-auto space-y-5">
+                  <div className="bg-white border border-[#e0dbd0] rounded-xl p-4 md:p-5 shadow-xs flex flex-wrap items-center justify-between gap-3">
                     <div className="space-y-0.5">
                       <h2 className="text-sm font-bold text-[#1a1714]">
                         Files ({mediaList.length})
                       </h2>
                       <p className="text-xs text-[#6b6256]">
-                        Upload or select files to use across 
-                        products and storefront sections.
+                        Click files to select multiple items for deletion, or
+                        upload new assets.
                       </p>
                     </div>
 
-                    <label className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-[#1a1714] hover:bg-[#8c6d48] text-white text-xs font-bold cursor-pointer transition-colors">
-                      <Upload className="w-4 h-4" />
-                      {uploadingImage ? "Uploading..." : "Upload File"}
-                      <input
-                        type="file"
-                        accept="image/*"
-                        disabled={uploadingImage}
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) handleImageFileUpload(file);
-                          e.target.value = "";
-                        }}
-                        className="hidden"
-                      />
-                    </label>
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      {/* Multi-select Delete Actions */}
+                      {selectedFileIds.length > 0 && (
+                        <div className="flex items-center gap-1.5 pr-2 border-r border-[#e5dfd3]">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setSelectedFileIds(
+                                selectedFileIds.length === mediaList.length
+                                  ? []
+                                  : mediaList.map((m) => m.id)
+                              )
+                            }
+                            className="px-2.5 py-2 rounded-lg bg-[#ebe8e1] hover:bg-[#dcd7cc] text-[#1a1714] text-[11px] font-bold transition-colors"
+                          >
+                            {selectedFileIds.length === mediaList.length
+                              ? "Unselect All"
+                              : "Select All"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setShowDeleteFilesModal(true)}
+                            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-[11px] font-bold transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            Delete ({selectedFileIds.length})
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Grid Size Toggle: Small (8) / Medium (6) / Large (4) */}
+                      <div className="flex items-center gap-1 bg-[#ebe8e1] p-1 rounded-lg">
+                        {(
+                          [
+                            ["sm", "Small"],
+                            ["md", "Medium"],
+                            ["lg", "Large"],
+                          ] as const
+                        ).map(([sizeKey, label]) => (
+                          <button
+                            key={sizeKey}
+                            type="button"
+                            onClick={() => setFileGridSize(sizeKey)}
+                            className={`px-3 py-1.5 rounded-md text-[11px] font-bold transition-colors ${
+                              fileGridSize === sizeKey
+                                ? "bg-[#1a1714] text-white shadow-xs"
+                                : "text-[#4a4238] hover:text-[#1a1714]"
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+
+                      <label className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#1a1714] hover:bg-[#8c6d48] text-white text-xs font-bold cursor-pointer transition-colors">
+                        <Upload className="w-4 h-4" />
+                        {uploadingImage ? "Uploading..." : "Upload File"}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          disabled={uploadingImage}
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) handleImageFileUpload(file);
+                            e.target.value = "";
+                          }}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
                   </div>
 
                   <div className="bg-white border border-[#e0dbd0] rounded-xl overflow-hidden shadow-xs">
                     {mediaList.length === 0 ? (
                       <div className="p-12 text-center text-xs text-[#6b6256]">
-                        No files uploaded yet. Click &ldquo;
-                        Upload File&rdquo; to add an image.
+                        No files uploaded yet. Click &ldquo;Upload File&rdquo;
+                        to add an image.
                       </div>
                     ) : (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 p-5">
-                        {mediaList.map((file) => (
-                          <div
-                            key={file.id}
-                            className="border border-[#e5dfd3] rounded-xl p-3 bg-[#fdfbf7] flex flex-col justify-between gap-3"
-                          >
-                            <div className="aspect-square rounded-lg bg-white border border-[#ece8df] overflow-hidden flex items-center justify-center">
-                              <img
-                                src={file.url}
-                                alt={file.fileName}
-                                className="w-full h-full object-contain"
-                              />
-                            </div>
-                            <div className="space-y-1 min-w-0">
-                              <p className="text-xs font-bold text-[#1a1714] truncate">
-                                {file.fileName}
-                              </p>
-                              <p className="text-[10px] text-[#6b6256]">
-                                {Math.max(1, Math.round(file.sizeByte / 1024))}{" "}
-                                KB
-                              </p>
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                              <button
-                                type="button"
-                                onClick={() => handleCopyUrl(file.url)}
-                                className="flex-1 inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#ebe8e1] hover:bg-[#dcd7cc] text-[#1a1714] text-[11px] font-bold transition-colors"
+                      <div
+                        className={`grid ${
+                          fileGridSize === "sm"
+                            ? "grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2.5 p-4"
+                            : fileGridSize === "md"
+                            ? "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 p-4"
+                            : "grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 p-5"
+                        }`}
+                      >
+                        {mediaList.map((file) => {
+                          const isSelected = selectedFileIds.includes(file.id);
+                          return (
+                            <div
+                              key={file.id}
+                              onClick={() => toggleSelectFile(file.id)}
+                              className={`relative border rounded-xl flex flex-col justify-between cursor-pointer select-none transition-all ${
+                                fileGridSize === "sm"
+                                  ? "p-2 gap-1.5"
+                                  : fileGridSize === "md"
+                                  ? "p-2.5 gap-2"
+                                  : "p-3 gap-3"
+                              } ${
+                                isSelected
+                                  ? "border-red-500 ring-2 ring-red-500/30 bg-red-50/40"
+                                  : "border-[#e5dfd3] bg-[#fdfbf7] hover:border-[#b8afa4]"
+                              }`}
+                            >
+                              {/* Selection Checkbox Badge */}
+                              <div
+                                className={`absolute top-2.5 left-2.5 z-10 w-5 h-5 rounded-md border flex items-center justify-center transition-colors ${
+                                  isSelected
+                                    ? "bg-red-600 border-red-600 text-white"
+                                    : "bg-white/90 border-[#cfc6b6] text-transparent"
+                                }`}
                               >
-                                <Copy className="w-3 h-3" />
-                                Copy URL
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setProductForm({
-                                    ...EMPTY_PRODUCT_FORM,
-                                    categoryId: categories[0]
-                                      ? String(categories[0].id)
-                                      : "",
-                                    image: file.url,
-                                  });
-                                  setShowProductModal(true);
-                                }}
-                                className="px-2.5 py-1.5 rounded-lg bg-[#1a1714] hover:bg-[#8c6d48] text-white text-[11px] font-bold transition-colors"
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                              </div>
+
+                              <div className="aspect-square rounded-lg bg-white border border-[#ece8df] overflow-hidden flex items-center justify-center">
+                                <img
+                                  src={file.url}
+                                  alt={file.fileName}
+                                  className="w-full h-full object-contain"
+                                />
+                              </div>
+
+                              <div className="space-y-0.5 min-w-0">
+                                <p
+                                  title={file.fileName}
+                                  className={`font-bold text-[#1a1714] truncate ${
+                                    fileGridSize === "sm"
+                                      ? "text-[10px]"
+                                      : "text-xs"
+                                  }`}
+                                >
+                                  {file.fileName}
+                                </p>
+                                <p className="text-[10px] text-[#6b6256]">
+                                  {Math.max(1, Math.round(file.sizeByte / 1024))}{" "}
+                                  KB
+                                </p>
+                              </div>
+
+                              <div
+                                className="flex items-center gap-1"
+                                onClick={(e) => e.stopPropagation()}
                               >
-                                Use in Product
-                              </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopyUrl(file.url)}
+                                  title="Copy URL"
+                                  className={`flex-1 inline-flex items-center justify-center gap-1 rounded-lg bg-[#ebe8e1] hover:bg-[#dcd7cc] text-[#1a1714] font-bold transition-colors ${
+                                    fileGridSize === "sm"
+                                      ? "px-1.5 py-1 text-[10px]"
+                                      : "px-2 py-1.5 text-[11px]"
+                                  }`}
+                                >
+                                  <Copy className="w-3 h-3 shrink-0" />
+                                  {fileGridSize === "lg" && (
+                                    <span>Copy URL</span>
+                                  )}
+                                  {fileGridSize === "md" && <span>Copy</span>}
+                                </button>
+                                <button
+                                  type="button"
+                                  title="Use in Product"
+                                  onClick={() => {
+                                    setProductForm({
+                                      ...EMPTY_PRODUCT_FORM,
+                                      categoryId: categories[0]
+                                        ? String(categories[0].id)
+                                        : "",
+                                      image: file.url,
+                                    });
+                                    setShowProductModal(true);
+                                  }}
+                                  className={`rounded-lg bg-[#1a1714] hover:bg-[#8c6d48] text-white font-bold transition-colors truncate ${
+                                    fileGridSize === "sm"
+                                      ? "px-1.5 py-1 text-[10px]"
+                                      : "px-2.5 py-1.5 text-[11px]"
+                                  }`}
+                                >
+                                  {fileGridSize === "lg"
+                                    ? "Use in Product"
+                                    : "Use"}
+                                </button>
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>
+
+                  {/* Delete Confirmation Warning Modal */}
+                  {showDeleteFilesModal && (
+                    <div className="fixed inset-0 z-[999] bg-black/65 backdrop-blur-xs flex items-center justify-center p-4">
+                      <div className="w-full max-w-md rounded-2xl bg-[#1a1714] border border-white/15 p-6 text-[#fdfbf7] shadow-2xl space-y-4">
+                        <div className="flex items-start gap-3">
+                          <div className="w-10 h-10 rounded-full bg-red-500/15 border border-red-500/30 flex items-center justify-center text-red-400 shrink-0">
+                            <AlertCircle className="w-5 h-5" />
+                          </div>
+                          <div className="space-y-1">
+                            <h3 className="text-sm font-bold text-white">
+                              Delete {selectedFileIds.length}{" "}
+                              {selectedFileIds.length === 1 ? "File" : "Files"}?
+                            </h3>
+                            <p className="text-xs text-[#d8d0c5] leading-relaxed">
+                              Are you sure you want to delete{" "}
+                              {selectedFileIds.length === 1
+                                ? "this selected file"
+                                : `these ${selectedFileIds.length} selected files`}
+                              ? This action cannot be undone and the{" "}
+                              {selectedFileIds.length === 1 ? "file" : "files"}{" "}
+                              will be permanently deleted.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 pt-2">
+                          <button
+                            type="button"
+                            disabled={deletingFiles}
+                            onClick={() => setShowDeleteFilesModal(false)}
+                            className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-bold text-[#fdfbf7] transition-colors"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            disabled={deletingFiles}
+                            onClick={handleDeleteSelectedFiles}
+                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-xs font-bold text-white transition-colors disabled:opacity-50"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            {deletingFiles
+                              ? "Deleting..."
+                              : "Yes, Permanently Delete"}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="max-w-6xl mx-auto space-y-6">

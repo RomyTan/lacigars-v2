@@ -16,6 +16,8 @@ interface BrandMarqueeProps {
     dividerWidth?: number;
     dividerThickness?: number;
     logoSize?: number;
+    frontOffsetY?: number;
+    backOffsetY?: number;
     ctaLabel?: string;
     ctaHref?: string;
   };
@@ -82,6 +84,8 @@ export function BrandMarqueeSection({ brands, content }: BrandMarqueeProps) {
   const trackGap = Math.round(64 * scale);
   const wrapPaddingY = Math.round(48 * scale);
   const backBandOffsetY = Math.round(16 * scale);
+  const frontOffsetY = Number(content?.frontOffsetY ?? 0);
+  const backOffsetY = Number(content?.backOffsetY ?? 0);
 
   return (
     <section className="relative z-10 bg-transparent py-24 md:py-32 overflow-hidden border-y border-[#e6e2d8] flex flex-col gap-16">
@@ -155,11 +159,11 @@ export function BrandMarqueeSection({ brands, content }: BrandMarqueeProps) {
       >
         {/* Band 2 (Behind): Subtle Light Gray Tilted Down-Right */}
         <div
-          className="absolute inset-x-0 top-1/2 rotate-[2deg] scale-105 bg-[#f4f2ee] border-y border-[#e6e2d8] overflow-hidden"
+          className="absolute inset-x-0 top-1/2 bg-[#f4f2ee] border-y border-[#e6e2d8] overflow-hidden"
           style={{
             paddingTop: `${bandPaddingY}px`,
             paddingBottom: `${bandPaddingY}px`,
-            transform: `translateY(calc(-50% - ${backBandOffsetY}px)) rotate(2deg) scale(1.05)`,
+            transform: `translateY(calc(-50% + ${backOffsetY - backBandOffsetY}px)) rotate(2deg) scale(1.05)`,
           }}
         >
           <div
@@ -197,10 +201,11 @@ export function BrandMarqueeSection({ brands, content }: BrandMarqueeProps) {
 
         {/* Band 1 (Front): Gold #F8B93C Tilted Up-Right */}
         <div
-          className="relative z-10 -rotate-[2deg] scale-105 bg-[#F8B93C] shadow-md overflow-hidden"
+          className="relative z-10 bg-[#F8B93C] shadow-md overflow-hidden"
           style={{
             paddingTop: `${bandPaddingY}px`,
             paddingBottom: `${bandPaddingY}px`,
+            transform: `translateY(${frontOffsetY}px) rotate(-2deg) scale(1.05)`,
           }}
         >
           <div

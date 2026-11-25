@@ -63,3 +63,37 @@ export async function POST(request: Request) {
     );
   }
 }
+
+export async function DELETE(request: Request) {
+  try {
+    const auth = await requireAdminSession();
+    if (!auth.ok) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const body = await request.json().catch(() => ({}));
+    const rawIds = Array.isArray(body?.ids) ? body.ids : [];
+    const ids = rawIds
+      .map((id: unknown) => Number(id))
+      .filter((id: number) => Number.isInteger(id) && id > 0);
+
+    if (ids.length === 0) {
+      return NextResponse.json(
+        { error: "No valid file IDs provided" },
+        { status: 400 }
+      );
+    }
+
+    const result = await prisma.cmsMedia.deleteMany({
+      where: { id: { in: ids } },
+    });
+
+    return NextResponse.json({ deletedCount: result.count });
+  } catch (error) {
+    console.error("DELETE /api/cms/media error:", error);
+    return NextResponse.json(
+      { error: "Failed to delete media files" },
+      { status: 500 }
+    );
+  }
+}

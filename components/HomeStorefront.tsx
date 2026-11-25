@@ -892,6 +892,8 @@ export function HomeStorefront({
                       dividerWidth?: number;
                       dividerThickness?: number;
                       logoSize?: number;
+                      frontOffsetY?: number;
+                      backOffsetY?: number;
                       ctaLabel?: string;
                       ctaHref?: string;
                     }

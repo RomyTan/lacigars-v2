@@ -82,6 +82,65 @@ function mapCustomerToAdmin(c: DbCustomerRow) {
   };
 }
 
+async function sendInviteEmail(params: {
+  to: string;
+  companyName: string;
+  contactName: string;
+  inviteUrl: string;
+}): Promise<{ sent: boolean; note: string }> {
+  const resendKey = process.env.RESEND_API_KEY;
+  if (!resendKey) {
+    return {
+      sent: false,
+      note: "Customer saved, but RESEND_API_KEY is missing in .env.",
+    };
+  }
+
+  const fromEmail =
+    process.env.ALERT_FROM_EMAIL ||
+    "Latin American Cigars <onboarding@resend.dev>";
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#1a1714;">
+      <h2 style="margin-bottom:8px;">You're Invited to LAC Wholesale Portal</h2>
+      <p style="font-size:14px;color:#4a4238;">Hi ${params.contactName},</p>
+      <p style="font-size:14px;color:#4a4238;">
+        Your wholesale account for <strong>${params.companyName}</strong> has been created with Latin American Cigars Corp.
+      </p>
+      <p style="margin:24px 0;">
+        <a href="${params.inviteUrl}" style="display:inline-block;padding:12px 20px;background:#1a1714;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:bold;font-size:13px;">
+          Access Wholesale Portal
+        </a>
+      </p>
+      <p style="font-size:12px;color:#6b6256;">
+        Or open this link directly:<br/>
+        <a href="${params.inviteUrl}" style="color:#8c6d48;">${params.inviteUrl}</a>
+      </p>
+    </div>`;
+
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${resendKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: fromEmail,
+      to: [params.to],
+      subject: "Invitation: Latin American Cigars Wholesale Portal",
+      html,
+    }),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    console.error("Resend invite error:", errText);
+    return { sent: false, note: `Customer saved, email failed: ${errText}` };
+  }
+
+  return { sent: true, note: `Invitation email sent to ${params.to}.` };
+}
+
 export async function GET() {
   try {
     const rows = await prisma.customer.findMany({
@@ -154,10 +213,30 @@ export async function POST(req: Request) {
       select: CUSTOMER_SELECT,
     });
 
+    const mapped = mapCustomerToAdmin(created);
+    const origin =
+      process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ||
+      new URL(req.url).origin;
+    const inviteUrl = `${origin}/wholesale?invite=${mapped.inviteToken}&email=${encodeURIComponent(
+      mapped.email
+    )}`;
+
+    const emailResult = await sendInviteEmail({
+      to: mapped.email,
+      companyName: mapped.companyName,
+      contactName: mapped.contactName,
+      inviteUrl,
+    });
+
     return NextResponse.json(
-      { customer: mapCustomerToAdmin(created) },
+      {
+        customer: mapped,
+        emailSent: emailResult.sent,
+        emailNote: emailResult.note,
+      },
       { status: 201 }
     );
+    
   } catch (err) {
     console.error("POST /api/cms/customers error:", err);
     return NextResponse.json(

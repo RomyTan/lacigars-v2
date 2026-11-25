@@ -21,6 +21,7 @@ interface BestSellersContent {
   heading?: string;
   headingSize?: number;
   headingStyle?: string;
+  textColor?: string;
   showDivider?: boolean;
   dividerWidth?: number;
   dividerThickness?: number;
@@ -101,6 +102,10 @@ export function BestSellersSection({
   const cardRadius = Number(cfg.cardRadius ?? 12);
   const showBorder = cfg.cardBorder ?? true;
   const borderColor = cfg.cardBorderColor || "#e5dfd3";
+  const textColor =
+    typeof cfg.textColor === "string" && cfg.textColor.trim()
+      ? cfg.textColor.trim()
+      : undefined;
 
   const displayCards = [0, 1, 2, 3].map((idx) => {
     const picked = Array.isArray(cfg.cards) ? cfg.cards[idx] : null;
@@ -108,7 +113,10 @@ export function BestSellersSection({
   });
 
   return (
-    <section className="relative z-10 py-16 px-6 md:px-10 bg-[#fdfbf7] text-[#1a1714]">
+    <section
+      style={textColor ? { color: textColor } : undefined}
+      className="relative z-10 py-16 px-6 md:px-10 bg-transparent text-[#1a1714]"
+    >
       <div className="max-w-7xl mx-auto">
         <div className="mb-8">
           {cfg.eyebrow !== "" && (
@@ -117,7 +125,10 @@ export function BestSellersSection({
             </p>
           )}
           <h2
-            style={{ fontSize: `${cfg.headingSize ?? 36}px` }}
+            style={{
+              fontSize: `${cfg.headingSize ?? 36}px`,
+              ...(textColor ? { color: textColor } : {}),
+            }}
             className={`font-serif text-[#1a1714] leading-tight ${headingStyleClass}`}
           >
             {cfg.heading || "Best Sellers"}
@@ -129,8 +140,9 @@ export function BestSellersSection({
                 style={{
                   width: `${cfg.dividerWidth ?? 100}%`,
                   height: `${cfg.dividerThickness ?? 1}px`,
+                  ...(textColor ? { backgroundColor: textColor } : {}),
                 }}
-                className="bg-[#d6cfc2]"
+                className={textColor ? "opacity-50" : "bg-[#d6cfc2]"}
               />
             </div>
           )}
@@ -199,6 +211,11 @@ export function BestSellersSection({
         <div className="mt-10 text-center">
           <Link
             href="/products"
+            style={
+              textColor
+                ? { color: textColor, borderColor: textColor }
+                : undefined
+            }
             className="inline-flex items-center gap-2 px-6 py-3 rounded-full border border-[#1a1714] text-[#1a1714] hover:bg-[#1a1714] hover:text-white text-[11px] font-bold tracking-[0.15em] uppercase transition-colors"
           >
             View Full Wholesale Catalog →
